@@ -7,11 +7,13 @@ import type { Turn } from "./transcript/codex.ts";
 // repeatedly over a growing rollout. The cursor records how many turns we've
 // already shipped for a session, so each Stop uploads only the new tail.
 
-const CURSOR_DIR = join(homedir(), ".honcho", "codex", "cursors");
+function cursorDir(): string {
+  return join(process.env.HONCHO_CONFIG_DIR || join(homedir(), ".honcho"), "codex", "cursors");
+}
 
 function cursorPath(sessionId: string): string {
   const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return join(CURSOR_DIR, `${safe}.json`);
+  return join(cursorDir(), `${safe}.json`);
 }
 
 export function readCursor(sessionId: string): number {
@@ -24,7 +26,7 @@ export function readCursor(sessionId: string): number {
 }
 
 export function writeCursor(sessionId: string, count: number): void {
-  mkdirSync(CURSOR_DIR, { recursive: true });
+  mkdirSync(cursorDir(), { recursive: true });
   writeFileSync(cursorPath(sessionId), JSON.stringify({ count, at: new Date().toISOString() }));
 }
 

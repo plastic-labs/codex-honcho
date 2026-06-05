@@ -14,9 +14,19 @@
   ],
   "author": "Plastic Labs",
   "license": "MIT",
+  "homepage": "https://honcho.dev",
+  "repository": "https://github.com/plastic-labs/codex-honcho",
   "bin": {
     "codex-honcho": "./bin/codex-honcho.ts"
   },
+  "files": [
+    "bin",
+    "src",
+    "skills",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit"

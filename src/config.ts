@@ -25,6 +25,7 @@ interface HostBlock {
   enabled?: boolean;
   saveMessages?: boolean;
   reasoningLevel?: string;
+  injectPerPrompt?: boolean;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
 }
 
@@ -43,6 +44,9 @@ export interface Config {
   enabled: boolean;
   saveMessages: boolean;
   reasoningLevel: string;
+  // Inject prompt-relevant context on every turn. Off by default — lean
+  // session-start context plus the MCP tools cover depth on demand.
+  injectPerPrompt: boolean;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
   sessions?: Record<string, string>;
 }
@@ -83,6 +87,7 @@ export function loadConfig(): Config | null {
     enabled: (host?.enabled ?? raw.enabled) !== false,
     saveMessages: (host?.saveMessages ?? raw.saveMessages) !== false,
     reasoningLevel: host?.reasoningLevel ?? raw.reasoningLevel ?? "low",
+    injectPerPrompt: (host?.injectPerPrompt ?? raw.injectPerPrompt) === true,
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,
   };
@@ -109,9 +114,14 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
 }
 
-// One stable session per project directory, prefixed with the peer name.
+// One stable session per project directory. No peer prefix — the workspace
+// already isolates a user's data, so the directory name alone is enough.
 export function sessionName(config: Config, cwd: string): string {
-  const override = config.sessions?.[cwd];
-  if (override) return override;
-  return `${slug(config.peerName)}-${slug(basename(cwd))}`;
+  return config.sessions?.[cwd] ?? slug(basename(cwd));
+}
+
+// Stable key for cursor/cache files: the Codex session id when present, else
+// the derived session name.
+export function memoryKey(config: Config, cwd: string, sessionId?: string): string {
+  return sessionId || sessionName(config, cwd);
 }

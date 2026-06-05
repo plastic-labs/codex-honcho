@@ -6,8 +6,13 @@ import { homedir } from "node:os";
 // feature is switched on in ~/.codex/config.toml. We own four events; the
 // installer merges them in additively and never touches a user's own hooks.
 
-export const DEFAULT_HOOKS_PATH = join(homedir(), ".codex", "hooks.json");
-export const DEFAULT_CONFIG_PATH = join(homedir(), ".codex", "config.toml");
+// CODEX_HOME mirrors Codex's own env override and keeps paths injectable.
+export function codexHome(): string {
+  return process.env.CODEX_HOME || join(homedir(), ".codex");
+}
+
+export const DEFAULT_HOOKS_PATH = join(codexHome(), "hooks.json");
+export const DEFAULT_CONFIG_PATH = join(codexHome(), "config.toml");
 
 // Our own dispatch verbs — the codex-honcho entrypoint routes each to a handler.
 export const HOOK_VERBS = ["recall", "prompt", "observe", "writeback"] as const;
@@ -33,27 +38,38 @@ interface HooksFile {
 // How each verb maps onto a Codex event. Stop is turn-scoped (Codex has no
 // SessionEnd), so writeback runs every turn and ships only the new tail.
 function hookGroupsFor(invoke: (verb: HookVerb) => string): Record<string, HookGroup[]> {
+  // Only SessionStart carries a status label; the per-turn hooks run silently
+  // (and detached) to avoid spamming the UI every prompt and tool call.
   return {
     SessionStart: [
       {
-        matcher: "startup|resume|clear",
-        hooks: [{ type: "command", command: invoke("recall"), timeout: 30, statusMessage: "Recalling Honcho memory" }],
+        // Includes `compact` so memory is re-surfaced after a context reset.
+        matcher: "startup|resume|clear|compact",
+        hooks: [{ type: "command", command: invoke("recall"), timeout: 30, statusMessage: "honcho" }],
       },
     ],
     UserPromptSubmit: [
       {
-        hooks: [{ type: "command", command: invoke("prompt"), timeout: 20, statusMessage: "Searching Honcho memory" }],
+        hooks: [{ type: "command", command: invoke("prompt"), timeout: 20 }],
       },
     ],
     PostToolUse: [
       {
         matcher: "*",
-        hooks: [{ type: "command", command: invoke("observe"), timeout: 10, statusMessage: "Recording Honcho context" }],
+        hooks: [{ type: "command", command: invoke("observe"), timeout: 10 }],
       },
     ],
     Stop: [
       {
-        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30, statusMessage: "Saving Honcho memory" }],
+        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30 }],
+      },
+    ],
+    // Flush the conversation before compaction discards it; the cursor keeps
+    // this from duplicating what Stop already shipped.
+    PreCompact: [
+      {
+        matcher: "manual|auto",
+        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30 }],
       },
     ],
   };

@@ -70,10 +70,10 @@ test("globalOverride applies flat fields across hosts", () => {
   expect(loadConfig()!.workspace).toBe("flat-ws");
 });
 
-test("session name is peer-prefixed and slugged per directory", () => {
+test("session name is the slugged directory, no peer prefix", () => {
   writeConfig({ apiKey: "k", peerName: "Eri" });
   const cfg = loadConfig()!;
-  expect(sessionName(cfg, "/Users/eri/My Project")).toBe("eri-my-project");
+  expect(sessionName(cfg, "/Users/eri/My Project")).toBe("my-project");
 });
 
 test("explicit session override wins", () => {

@@ -33,6 +33,24 @@ interface RolloutEvent {
 
 const TEXT_BLOCK_TYPES = new Set(["input_text", "output_text", "text"]);
 
+// Codex injects its own context as user-role messages (environment, instruction
+// blobs, abort markers). These aren't things the user said, so they're dropped
+// from what we persist to Honcho.
+const CODEX_SYSTEM_TAGS = [
+  "environment_context",
+  "turn_aborted",
+  "user_instructions",
+  "apps_instructions",
+  "plugins_instructions",
+  "skills_instructions",
+  "collaboration_mode",
+];
+
+function isInjectedSystemTurn(text: string): boolean {
+  const t = text.trimStart();
+  return CODEX_SYSTEM_TAGS.some((tag) => t.startsWith(`<${tag}>`) || t.startsWith(`<${tag} `));
+}
+
 function collectText(content: string | ContentBlock[] | undefined): string {
   if (typeof content === "string") return content.trim();
   if (!Array.isArray(content)) return "";
@@ -72,6 +90,7 @@ export function readRollout(path: string): Turn[] {
 
     const text = collectText(payload.content);
     if (!text) continue;
+    if (payload.role === "user" && isInjectedSystemTurn(text)) continue;
 
     turns.push({ role: payload.role, text, at: event.timestamp });
   }

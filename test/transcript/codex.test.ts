@@ -57,6 +57,18 @@ test("missing file yields no turns and no cwd", () => {
   expect(readRolloutCwd("/no/such/rollout.jsonl")).toBeUndefined();
 });
 
+test("drops Codex-injected system turns (environment_context, etc.)", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>\n  <cwd>/x</cwd>\n</environment_context>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<turn_aborted>interrupted</turn_aborted>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<skills_instructions>use skills</skills_instructions>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "actual question from me" }] } },
+  ]);
+  const turns = readRollout(path);
+  expect(turns).toHaveLength(1);
+  expect(turns[0].text).toBe("actual question from me");
+});
+
 test("skips malformed lines without throwing", () => {
   const path = writeRollout([
     { type: "session_meta", payload: { cwd: "/tmp/x" } },
