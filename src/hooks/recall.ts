@@ -1,44 +1,49 @@
-import { loadConfig, sessionName } from "../config.ts";
+import { loadConfig, sessionName, memoryKey } from "../config.ts";
 import { openSession, renderContext } from "../memory.ts";
+import { readContext, writeContext, isStale, markInjected } from "../cache.ts";
+import { runDetached } from "../background.ts";
 
 interface RecallInput {
   cwd?: string;
   session_id?: string;
 }
 
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_CONCLUSIONS = 8;
+
 // Injected once at session start so the model actively queries memory through
-// the Honcho MCP tools rather than relying only on this passive context.
+// the Honcho MCP tools rather than leaning on heavy per-turn injection.
 const TOOL_HINT =
   "Honcho memory tools are available via MCP — call honcho search / get_context to recall facts " +
   "across sessions, and honcho chat for questions about the user's history. Prefer querying over guessing.";
 
-// SessionStart: materialize the session, surface what we know, and nudge the
-// dialectic engine so its reasoning keeps feeding the knowledge graph.
+// SessionStart: materialize the session, surface a lean snapshot, and kick the
+// dialectic engine in the background so it keeps refining Honcho's model.
 export async function recall(input: RecallInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled) return "";
 
   const cwd = input.cwd || process.cwd();
   const name = sessionName(config, cwd);
+  const key = memoryKey(config, cwd, input.session_id);
 
-  const { session, userPeer } = await openSession(config, name);
-  const context = await userPeer.context({ maxConclusions: 20, includeMostFrequent: true });
+  // openSession also materializes peers, which writeback relies on.
+  const { userPeer } = await openSession(config, name);
 
-  // Dialectic reasoning, bounded and best-effort: results aren't displayed, but
-  // running them refines Honcho's representation of the user over time.
-  if (config.reasoningLevel !== "minimal") {
-    await Promise.allSettled([
-      userPeer.chat(
-        `Summarize what you know about ${config.peerName} — preferences, current projects, and working style.`,
-        { session, reasoningLevel: config.reasoningLevel },
-      ),
-      userPeer.chat(`What has ${config.peerName} been working on recently?`, {
-        session,
-        reasoningLevel: config.reasoningLevel,
-      }),
-    ]);
+  let ctx = !isStale(key, CACHE_TTL_MS) ? readContext(key) : null;
+  if (!ctx) {
+    const fetched = await userPeer.context({ maxConclusions: MAX_CONCLUSIONS, includeMostFrequent: true });
+    writeContext(key, fetched.representation, fetched.peerCard);
+    ctx = { representation: fetched.representation, peerCard: fetched.peerCard, at: Date.now() };
   }
 
-  const block = renderContext(context, config.peerName);
+  // Dialectic feeds the knowledge graph but is slow — run it detached so it
+  // never blocks the session opening.
+  if (config.reasoningLevel !== "minimal") {
+    runDetached("dialectic", JSON.stringify({ cwd, session_id: input.session_id }));
+  }
+
+  const block = renderContext(ctx, config.peerName, 5);
+  if (block) markInjected(key, block);
   return block ? `${block}\n${TOOL_HINT}` : TOOL_HINT;
 }

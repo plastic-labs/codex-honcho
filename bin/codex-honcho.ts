@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { fileURLToPath } from "node:url";
-import { dispatch, isHookVerb } from "../src/dispatch.ts";
+import { dispatch, isVerb } from "../src/dispatch.ts";
+import { runDetached, isBackground } from "../src/background.ts";
 import {
   installCodexHooks,
   removeCodexHooks,
@@ -14,12 +15,31 @@ import { loadConfig } from "../src/config.ts";
 
 const command = process.argv[2] ?? "";
 
+// Write-only verbs run detached so the turn never blocks on the network.
+const DETACH = new Set(["writeback", "observe"]);
+// Verbs whose output is injected as model-only context (not shown to the user).
+const INJECT_EVENT: Record<string, string> = {
+  recall: "SessionStart",
+  prompt: "UserPromptSubmit",
+};
+
 async function runHook(verb: string): Promise<void> {
   const stdin = await Bun.stdin.text();
-  if (!isHookVerb(verb)) return;
+  if (!isVerb(verb)) return;
+
+  if (DETACH.has(verb) && !isBackground()) {
+    runDetached(verb, stdin);
+    return;
+  }
+
   try {
     const out = await dispatch(verb, stdin);
-    if (out) process.stdout.write(out + "\n");
+    if (!out) return;
+    const event = INJECT_EVENT[verb];
+    const payload = event
+      ? JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: out } })
+      : out;
+    process.stdout.write(payload + "\n");
   } catch {
     // Never surface a hook failure to Codex.
   }

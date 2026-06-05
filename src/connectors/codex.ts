@@ -38,28 +38,30 @@ interface HooksFile {
 // How each verb maps onto a Codex event. Stop is turn-scoped (Codex has no
 // SessionEnd), so writeback runs every turn and ships only the new tail.
 function hookGroupsFor(invoke: (verb: HookVerb) => string): Record<string, HookGroup[]> {
+  // Only SessionStart carries a status label; the per-turn hooks run silently
+  // (and detached) to avoid spamming the UI every prompt and tool call.
   return {
     SessionStart: [
       {
         // Includes `compact` so memory is re-surfaced after a context reset.
         matcher: "startup|resume|clear|compact",
-        hooks: [{ type: "command", command: invoke("recall"), timeout: 30, statusMessage: "Recalling Honcho memory" }],
+        hooks: [{ type: "command", command: invoke("recall"), timeout: 30, statusMessage: "honcho" }],
       },
     ],
     UserPromptSubmit: [
       {
-        hooks: [{ type: "command", command: invoke("prompt"), timeout: 20, statusMessage: "Searching Honcho memory" }],
+        hooks: [{ type: "command", command: invoke("prompt"), timeout: 20 }],
       },
     ],
     PostToolUse: [
       {
         matcher: "*",
-        hooks: [{ type: "command", command: invoke("observe"), timeout: 10, statusMessage: "Recording Honcho context" }],
+        hooks: [{ type: "command", command: invoke("observe"), timeout: 10 }],
       },
     ],
     Stop: [
       {
-        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30, statusMessage: "Saving Honcho memory" }],
+        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30 }],
       },
     ],
     // Flush the conversation before compaction discards it; the cursor keeps
@@ -67,7 +69,7 @@ function hookGroupsFor(invoke: (verb: HookVerb) => string): Record<string, HookG
     PreCompact: [
       {
         matcher: "manual|auto",
-        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30, statusMessage: "Flushing Honcho memory" }],
+        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30 }],
       },
     ],
   };

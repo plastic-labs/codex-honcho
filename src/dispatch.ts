@@ -1,12 +1,20 @@
 import { HOOK_VERBS, type HookVerb } from "./connectors/codex.ts";
 
+// Verbs that aren't Codex events — only ever spawned detached by a handler.
+export const INTERNAL_VERBS = ["dialectic"] as const;
+export type Verb = HookVerb | (typeof INTERNAL_VERBS)[number];
+
 export function isHookVerb(value: string): value is HookVerb {
   return (HOOK_VERBS as readonly string[]).includes(value);
 }
 
+export function isVerb(value: string): value is Verb {
+  return isHookVerb(value) || (INTERNAL_VERBS as readonly string[]).includes(value);
+}
+
 // Route a hook verb to its handler. Every handler is best-effort: any failure
 // resolves to an empty string so a hook never blocks or breaks a Codex turn.
-export async function dispatch(verb: HookVerb, stdinText: string): Promise<string> {
+export async function dispatch(verb: Verb, stdinText: string): Promise<string> {
   let input: Record<string, unknown> = {};
   try {
     input = JSON.parse(stdinText || "{}");
@@ -31,6 +39,10 @@ export async function dispatch(verb: HookVerb, stdinText: string): Promise<strin
       case "writeback": {
         const { writeback } = await import("./hooks/writeback.ts");
         return await writeback(input);
+      }
+      case "dialectic": {
+        const { dialectic } = await import("./hooks/dialectic.ts");
+        return await dialectic(input);
       }
     }
   } catch {
