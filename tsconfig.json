@@ -10,6 +10,6 @@
     "allowImportingTsExtensions": true,
     "types": ["bun-types"]
   },
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*", "test/**/*", "bin/**/*"],
   "exclude": ["node_modules", "dist"]
 }
