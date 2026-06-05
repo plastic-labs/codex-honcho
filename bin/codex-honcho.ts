@@ -8,6 +8,7 @@ import {
   DEFAULT_CONFIG_PATH,
 } from "../src/connectors/codex.ts";
 import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
+import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
 import { loadConfig } from "../src/config.ts";
 
 const command = process.argv[2] ?? "";
@@ -39,6 +40,7 @@ switch (command) {
     installCodexHooks();
     console.log(`Installed Codex hooks → ${DEFAULT_HOOKS_PATH}`);
     console.log(`Enabled [features].hooks → ${DEFAULT_CONFIG_PATH}`);
+    console.log(`Installed memory skill → ${installSkill()}`);
     const id = mcpIdentity();
     if (id) {
       installMcpServer(id);
@@ -52,11 +54,13 @@ switch (command) {
   case "uninstall": {
     const hooksGone = removeCodexHooks();
     const mcpGone = removeMcpServer();
-    console.log(hooksGone || mcpGone ? "Removed codex-honcho hooks and MCP registration." : "No codex-honcho install found.");
+    const skillGone = removeSkill();
+    console.log(hooksGone || mcpGone || skillGone ? "Removed codex-honcho hooks, MCP registration, and skill." : "No codex-honcho install found.");
     break;
   }
   case "status":
     console.log(hasCodexHooks() ? "codex-honcho hooks: installed" : "codex-honcho hooks: not installed");
+    console.log(hasSkill() ? "memory skill: installed" : "memory skill: not installed");
     console.log(loadConfig() ? "honcho config: found" : "honcho config: missing (run `honcho init`)");
     break;
   default:
