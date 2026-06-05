@@ -1,11 +1,13 @@
-import { loadConfig, sessionName } from "../config.ts";
-import { openSession } from "../memory.ts";
+import { loadConfig, memoryKey } from "../config.ts";
+import { enqueue } from "../queue.ts";
+import { runDetached } from "../background.ts";
 
 interface ObserveInput {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   tool_response?: unknown;
   cwd?: string;
+  session_id?: string;
 }
 
 // Skip read-only/navigation shell commands that carry no memory signal.
@@ -43,7 +45,8 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
   return `used ${name}`;
 }
 
-// PostToolUse: record a terse observation of meaningful tool activity.
+// PostToolUse: queue a terse observation of meaningful tool activity, then kick
+// a background flush. Local + instant; the upload happens async.
 export async function observe(input: ObserveInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled || !config.saveMessages) return "";
@@ -52,8 +55,8 @@ export async function observe(input: ObserveInput): Promise<string> {
   if (!summary) return "";
 
   const cwd = input.cwd || process.cwd();
-  const name = sessionName(config, cwd);
-  const { session, aiPeer } = await openSession(config, name);
-  await session.addMessages([aiPeer.message(`[tool] ${summary}`, { metadata: { type: "tool" } })]);
+  const key = memoryKey(config, cwd, input.session_id);
+  enqueue(key, [{ role: "tool", text: summary, at: new Date().toISOString() }]);
+  runDetached("flush", JSON.stringify({ cwd, session_id: input.session_id }));
   return "";
 }

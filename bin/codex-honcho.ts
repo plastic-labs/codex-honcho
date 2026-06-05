@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { fileURLToPath } from "node:url";
 import { dispatch, isVerb } from "../src/dispatch.ts";
-import { runDetached, isBackground } from "../src/background.ts";
 import {
   installCodexHooks,
   removeCodexHooks,
@@ -11,12 +10,11 @@ import {
 } from "../src/connectors/codex.ts";
 import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
-import { loadConfig } from "../src/config.ts";
+import { loadConfig, memoryKey } from "../src/config.ts";
+import { pendingCount } from "../src/queue.ts";
 
 const command = process.argv[2] ?? "";
 
-// Write-only verbs run detached so the turn never blocks on the network.
-const DETACH = new Set(["writeback", "observe"]);
 // Verbs whose output is injected as model-only context (not shown to the user).
 const INJECT_EVENT: Record<string, string> = {
   recall: "SessionStart",
@@ -26,11 +24,6 @@ const INJECT_EVENT: Record<string, string> = {
 async function runHook(verb: string): Promise<void> {
   const stdin = await Bun.stdin.text();
   if (!isVerb(verb)) return;
-
-  if (DETACH.has(verb) && !isBackground()) {
-    runDetached(verb, stdin);
-    return;
-  }
 
   try {
     const out = await dispatch(verb, stdin);
@@ -82,11 +75,17 @@ switch (command) {
     console.log(hooksGone || mcpGone || skillGone ? "Removed codex-honcho hooks, MCP registration, and skill." : "No codex-honcho install found.");
     break;
   }
-  case "status":
+  case "status": {
     console.log(hasCodexHooks() ? "codex-honcho hooks: installed" : "codex-honcho hooks: not installed");
     console.log(hasSkill() ? "memory skill: installed" : "memory skill: not installed");
-    console.log(loadConfig() ? "honcho config: found" : "honcho config: missing (run `honcho init`)");
+    const cfg = loadConfig();
+    console.log(cfg ? "honcho config: found" : "honcho config: missing (run `honcho init`)");
+    if (cfg) {
+      const key = memoryKey(cfg, process.cwd());
+      console.log(`queue (${key}): ${pendingCount(key)} pending upload`);
+    }
     break;
+  }
   default:
     await runHook(command);
 }

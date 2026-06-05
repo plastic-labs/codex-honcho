@@ -6,7 +6,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 // the per-prompt hook (when enabled) can serve instantly without a network
 // round trip. lastInjected dedupes repeat injections.
 
-const CACHE_DIR = join(process.env.HONCHO_CONFIG_DIR || join(homedir(), ".honcho"), "codex", "context");
+function cacheDir(): string {
+  return join(process.env.HONCHO_CONFIG_DIR || join(homedir(), ".honcho"), "codex", "context");
+}
 
 export interface CachedContext {
   representation?: string | null;
@@ -16,7 +18,7 @@ export interface CachedContext {
 }
 
 function cachePath(key: string): string {
-  return join(CACHE_DIR, `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`);
+  return join(cacheDir(), `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`);
 }
 
 export function readContext(key: string): CachedContext | null {
@@ -28,7 +30,7 @@ export function readContext(key: string): CachedContext | null {
 }
 
 export function writeContext(key: string, representation?: string | null, peerCard?: string[] | null): void {
-  mkdirSync(CACHE_DIR, { recursive: true });
+  mkdirSync(cacheDir(), { recursive: true });
   const prev = readContext(key);
   writeFileSync(
     cachePath(key),
@@ -48,6 +50,6 @@ export function lastInjected(key: string): string | undefined {
 export function markInjected(key: string, text: string): void {
   const c = readContext(key);
   if (!c) return;
-  mkdirSync(CACHE_DIR, { recursive: true });
+  mkdirSync(cacheDir(), { recursive: true });
   writeFileSync(cachePath(key), JSON.stringify({ ...c, lastInjected: text }));
 }

@@ -1,7 +1,7 @@
 import { HOOK_VERBS, type HookVerb } from "./connectors/codex.ts";
 
 // Verbs that aren't Codex events — only ever spawned detached by a handler.
-export const INTERNAL_VERBS = ["dialectic"] as const;
+export const INTERNAL_VERBS = ["dialectic", "flush"] as const;
 export type Verb = HookVerb | (typeof INTERNAL_VERBS)[number];
 
 export function isHookVerb(value: string): value is HookVerb {
@@ -43,6 +43,10 @@ export async function dispatch(verb: Verb, stdinText: string): Promise<string> {
       case "dialectic": {
         const { dialectic } = await import("./hooks/dialectic.ts");
         return await dialectic(input);
+      }
+      case "flush": {
+        const { flush } = await import("./hooks/flush.ts");
+        return await flush(input);
       }
     }
   } catch {

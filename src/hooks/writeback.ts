@@ -1,7 +1,8 @@
-import { loadConfig, sessionName } from "../config.ts";
-import { openSession } from "../memory.ts";
+import { loadConfig, sessionName, memoryKey } from "../config.ts";
 import { readRollout } from "../transcript/codex.ts";
 import { readCursor, writeCursor, selectNewTurns } from "../cursor.ts";
+import { enqueue } from "../queue.ts";
+import { runDetached } from "../background.ts";
 
 interface WritebackInput {
   session_id?: string;
@@ -9,29 +10,29 @@ interface WritebackInput {
   transcript_path?: string;
 }
 
-const MAX_CHARS = 4000;
+// Pure-local: pull the rollout turns not yet captured into the queue and
+// advance the rollout cursor. No network — returns how many were enqueued.
+export function capture(key: string, rolloutPath: string): number {
+  const turns = readRollout(rolloutPath);
+  const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key));
+  if (fresh.length === 0) return 0;
+  enqueue(key, fresh.map((t) => ({ role: t.role, text: t.text, at: t.at })));
+  writeCursor(key, nextCursor);
+  return fresh.length;
+}
 
-// Stop (turn-scoped): ship the turns added since the last writeback.
+// Stop / PreCompact (turn-scoped): capture this turn's new rollout tail into
+// the queue instantly, then kick a background flush. The upload never blocks.
 export async function writeback(input: WritebackInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled || !config.saveMessages) return "";
   if (!input.transcript_path) return "";
 
   const cwd = input.cwd || process.cwd();
-  const name = sessionName(config, cwd);
-  const cursorKey = input.session_id || name;
+  const key = memoryKey(config, cwd, input.session_id);
 
-  const turns = readRollout(input.transcript_path);
-  const { fresh, nextCursor } = selectNewTurns(turns, readCursor(cursorKey));
-  if (fresh.length === 0) return "";
-
-  const { session, userPeer, aiPeer } = await openSession(config, name);
-  const messages = fresh.map((turn) => {
-    const peer = turn.role === "user" ? userPeer : aiPeer;
-    return peer.message(turn.text.slice(0, MAX_CHARS), { createdAt: turn.at });
-  });
-
-  await session.addMessages(messages);
-  writeCursor(cursorKey, nextCursor);
+  if (capture(key, input.transcript_path) > 0) {
+    runDetached("flush", JSON.stringify({ cwd, session_id: input.session_id }));
+  }
   return "";
 }
