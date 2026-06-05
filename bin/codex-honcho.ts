@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { fileURLToPath } from "node:url";
 import { dispatch, isHookVerb } from "../src/dispatch.ts";
 import {
   installCodexHooks,
@@ -37,7 +38,10 @@ function mcpIdentity(): McpIdentity | null {
 
 switch (command) {
   case "install": {
-    installCodexHooks();
+    // Wire hooks to this script's absolute path so the Codex hook runner
+    // doesn't depend on `codex-honcho` being on PATH.
+    const self = fileURLToPath(import.meta.url);
+    installCodexHooks({ invoke: (verb) => `bun run ${JSON.stringify(self)} ${verb}` });
     console.log(`Installed Codex hooks → ${DEFAULT_HOOKS_PATH}`);
     console.log(`Enabled [features].hooks → ${DEFAULT_CONFIG_PATH}`);
     console.log(`Installed memory skill → ${installSkill()}`);

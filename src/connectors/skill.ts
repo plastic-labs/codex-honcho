@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, copyFileSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { codexHome } from "./codex.ts";
 
 // Codex discovers agent skills under ~/.codex/skills/<name>/SKILL.md. We ship
 // one that tells the model when to actively query and save Honcho memory.
@@ -10,7 +10,7 @@ const SKILL_NAME = "honcho-memory";
 const SKILL_SOURCE = fileURLToPath(new URL("../../skills/honcho-memory/SKILL.md", import.meta.url));
 
 function defaultSkillsDir(): string {
-  return join(homedir(), ".codex", "skills");
+  return join(codexHome(), "skills");
 }
 
 export function installSkill(skillsDir: string = defaultSkillsDir()): string {

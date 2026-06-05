@@ -6,8 +6,13 @@ import { homedir } from "node:os";
 // feature is switched on in ~/.codex/config.toml. We own four events; the
 // installer merges them in additively and never touches a user's own hooks.
 
-export const DEFAULT_HOOKS_PATH = join(homedir(), ".codex", "hooks.json");
-export const DEFAULT_CONFIG_PATH = join(homedir(), ".codex", "config.toml");
+// CODEX_HOME mirrors Codex's own env override and keeps paths injectable.
+export function codexHome(): string {
+  return process.env.CODEX_HOME || join(homedir(), ".codex");
+}
+
+export const DEFAULT_HOOKS_PATH = join(codexHome(), "hooks.json");
+export const DEFAULT_CONFIG_PATH = join(codexHome(), "config.toml");
 
 // Our own dispatch verbs — the codex-honcho entrypoint routes each to a handler.
 export const HOOK_VERBS = ["recall", "prompt", "observe", "writeback"] as const;
