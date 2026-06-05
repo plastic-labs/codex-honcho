@@ -22,6 +22,10 @@ function shellCommand(input: Record<string, unknown>): string {
 export function summarizeTool(name: string, input: Record<string, unknown>): string {
   if (!name) return "";
 
+  // Don't record Honcho's own MCP calls — recording that we queried memory is
+  // circular noise that pollutes the representation.
+  if (name.startsWith("mcp__honcho")) return "";
+
   if (name === "shell" || name === "local_shell" || name === "exec") {
     const cmd = shellCommand(input).trim();
     if (!cmd) return "";

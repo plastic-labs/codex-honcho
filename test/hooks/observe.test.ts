@@ -20,7 +20,12 @@ test("extracts edited files from an apply_patch", () => {
 });
 
 test("falls back to a generic note for unknown tools", () => {
-  expect(summarizeTool("mcp__honcho__search", {})).toBe("used mcp__honcho__search");
+  expect(summarizeTool("mcp__linear__list_issues", {})).toBe("used mcp__linear__list_issues");
+});
+
+test("never records Honcho's own MCP calls (circular)", () => {
+  expect(summarizeTool("mcp__honcho__chat", {})).toBe("");
+  expect(summarizeTool("mcp__honcho__get_peer_card", {})).toBe("");
 });
 
 test("empty tool name yields nothing", () => {
