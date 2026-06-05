@@ -28,10 +28,7 @@ export async function writeback(input: WritebackInput): Promise<string> {
   const { session, userPeer, aiPeer } = await openSession(config, name);
   const messages = fresh.map((turn) => {
     const peer = turn.role === "user" ? userPeer : aiPeer;
-    return peer.message(turn.text.slice(0, MAX_CHARS), {
-      createdAt: turn.at,
-      metadata: { session_affinity: name },
-    });
+    return peer.message(turn.text.slice(0, MAX_CHARS), { createdAt: turn.at });
   });
 
   await session.addMessages(messages);

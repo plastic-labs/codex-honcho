@@ -114,11 +114,10 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
 }
 
-// One stable session per project directory, prefixed with the peer name.
+// One stable session per project directory. No peer prefix — the workspace
+// already isolates a user's data, so the directory name alone is enough.
 export function sessionName(config: Config, cwd: string): string {
-  const override = config.sessions?.[cwd];
-  if (override) return override;
-  return `${slug(config.peerName)}-${slug(basename(cwd))}`;
+  return config.sessions?.[cwd] ?? slug(basename(cwd));
 }
 
 // Stable key for cursor/cache files: the Codex session id when present, else

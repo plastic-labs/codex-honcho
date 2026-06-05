@@ -50,6 +50,6 @@ export async function observe(input: ObserveInput): Promise<string> {
   const cwd = input.cwd || process.cwd();
   const name = sessionName(config, cwd);
   const { session, aiPeer } = await openSession(config, name);
-  await session.addMessages([aiPeer.message(`[tool] ${summary}`, { metadata: { type: "tool", session_affinity: name } })]);
+  await session.addMessages([aiPeer.message(`[tool] ${summary}`, { metadata: { type: "tool" } })]);
   return "";
 }
