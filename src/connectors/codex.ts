@@ -36,7 +36,8 @@ function hookGroupsFor(invoke: (verb: HookVerb) => string): Record<string, HookG
   return {
     SessionStart: [
       {
-        matcher: "startup|resume|clear",
+        // Includes `compact` so memory is re-surfaced after a context reset.
+        matcher: "startup|resume|clear|compact",
         hooks: [{ type: "command", command: invoke("recall"), timeout: 30, statusMessage: "Recalling Honcho memory" }],
       },
     ],
@@ -54,6 +55,14 @@ function hookGroupsFor(invoke: (verb: HookVerb) => string): Record<string, HookG
     Stop: [
       {
         hooks: [{ type: "command", command: invoke("writeback"), timeout: 30, statusMessage: "Saving Honcho memory" }],
+      },
+    ],
+    // Flush the conversation before compaction discards it; the cursor keeps
+    // this from duplicating what Stop already shipped.
+    PreCompact: [
+      {
+        matcher: "manual|auto",
+        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30, statusMessage: "Flushing Honcho memory" }],
       },
     ],
   };

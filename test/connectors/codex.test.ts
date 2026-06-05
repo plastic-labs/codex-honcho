@@ -18,13 +18,16 @@ function readJson(path: string) {
   return JSON.parse(readFileSync(path, "utf-8"));
 }
 
-test("install writes our four events", () => {
+test("install writes our hook events", () => {
   const { hooks, config } = tmp();
   installCodexHooks({ hooksPath: hooks, configPath: config });
   const file = readJson(hooks);
-  expect(Object.keys(file.hooks).sort()).toEqual(["PostToolUse", "SessionStart", "Stop", "UserPromptSubmit"]);
+  expect(Object.keys(file.hooks).sort()).toEqual(["PostToolUse", "PreCompact", "SessionStart", "Stop", "UserPromptSubmit"]);
   expect(file.hooks.Stop[0].hooks[0].command).toContain("writeback");
-  expect(file.hooks.SessionStart[0].matcher).toBe("startup|resume|clear");
+  expect(file.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
+  // PreCompact reuses the writeback verb to flush before a context reset.
+  expect(file.hooks.PreCompact[0].hooks[0].command).toContain("writeback");
+  expect(file.hooks.PreCompact[0].matcher).toBe("manual|auto");
 });
 
 test("install enables the hooks feature flag", () => {
