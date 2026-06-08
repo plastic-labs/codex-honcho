@@ -10,6 +10,7 @@ interface FlushInput {
 }
 
 const MAX_CHARS = 4000;
+const CHUNK_SIZE = 25;
 
 function lockPath(key: string): string {
   return join(queueDir(), `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.lock`);
@@ -60,22 +61,27 @@ export async function flush(input: FlushInput): Promise<string> {
   if (!acquireLock(key)) return "";
   try {
     const all = readQueue(key);
-    const start = sentCount(key);
-    const batch = all.slice(start);
-    if (batch.length === 0) return "";
+    let start = sentCount(key);
+    if (all.length - start <= 0) return "";
 
     const { session, userPeer, aiPeer } = await openSession(config, name);
-    const messages = batch.map((entry) => {
-      const peer = entry.role === "user" ? userPeer : aiPeer;
-      const text = entry.role === "tool" ? `[tool] ${entry.text}` : entry.text;
-      return peer.message(text.slice(0, MAX_CHARS), {
-        createdAt: entry.at,
-        ...(entry.role === "tool" ? { metadata: { type: "tool" } } : {}),
-      });
-    });
 
-    await session.addMessages(messages);
-    setSentCount(key, start + batch.length);
+    // Upload in bounded chunks, advancing the sent marker after each so a
+    // failure mid-drain keeps partial progress and retries from the right spot.
+    for (let i = start; i < all.length; i += CHUNK_SIZE) {
+      const chunk = all.slice(i, i + CHUNK_SIZE);
+      const messages = chunk.map((entry) => {
+        const peer = entry.role === "user" ? userPeer : aiPeer;
+        const text = entry.role === "tool" ? `[tool] ${entry.text}` : entry.text;
+        return peer.message(text.slice(0, MAX_CHARS), {
+          createdAt: entry.at,
+          ...(entry.role === "tool" ? { metadata: { type: "tool" } } : {}),
+        });
+      });
+      await session.addMessages(messages);
+      start += chunk.length;
+      setSentCount(key, start);
+    }
   } finally {
     releaseLock(key);
   }

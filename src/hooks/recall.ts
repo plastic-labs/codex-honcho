@@ -1,7 +1,6 @@
 import { loadConfig, sessionName, memoryKey } from "../config.ts";
 import { openSession, renderContext } from "../memory.ts";
 import { readContext, writeContext, isStale, markInjected } from "../cache.ts";
-import { runDetached } from "../background.ts";
 
 interface RecallInput {
   cwd?: string;
@@ -17,8 +16,8 @@ const TOOL_HINT =
   "Honcho memory tools are available via MCP — call honcho search / get_context to recall facts " +
   "across sessions, and honcho chat for questions about the user's history. Prefer querying over guessing.";
 
-// SessionStart: materialize the session, surface a lean snapshot, and kick the
-// dialectic engine in the background so it keeps refining Honcho's model.
+// SessionStart: materialize the session and surface a lean snapshot of what we
+// know, plus a nudge to use the MCP tools for anything deeper.
 export async function recall(input: RecallInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled) return "";
@@ -35,12 +34,6 @@ export async function recall(input: RecallInput): Promise<string> {
     const fetched = await userPeer.context({ maxConclusions: MAX_CONCLUSIONS, includeMostFrequent: true });
     writeContext(key, fetched.representation, fetched.peerCard);
     ctx = { representation: fetched.representation, peerCard: fetched.peerCard, at: Date.now() };
-  }
-
-  // Dialectic feeds the knowledge graph but is slow — run it detached so it
-  // never blocks the session opening.
-  if (config.reasoningLevel !== "minimal") {
-    runDetached("dialectic", JSON.stringify({ cwd, session_id: input.session_id }));
   }
 
   const block = renderContext(ctx, config.peerName, 5);

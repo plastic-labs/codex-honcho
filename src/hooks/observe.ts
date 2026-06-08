@@ -1,6 +1,5 @@
 import { loadConfig, memoryKey } from "../config.ts";
 import { enqueue } from "../queue.ts";
-import { runDetached } from "../background.ts";
 
 interface ObserveInput {
   tool_name?: string;
@@ -45,8 +44,9 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
   return `used ${name}`;
 }
 
-// PostToolUse: queue a terse observation of meaningful tool activity, then kick
-// a background flush. Local + instant; the upload happens async.
+// PostToolUse: queue a terse observation of meaningful tool activity. Enqueue
+// only — instant, no network. The next writeback (Stop) flushes it along with
+// the turn, so frequent tool calls never trigger an upload of their own.
 export async function observe(input: ObserveInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled || !config.saveMessages) return "";
@@ -55,8 +55,6 @@ export async function observe(input: ObserveInput): Promise<string> {
   if (!summary) return "";
 
   const cwd = input.cwd || process.cwd();
-  const key = memoryKey(config, cwd, input.session_id);
-  enqueue(key, [{ role: "tool", text: summary, at: new Date().toISOString() }]);
-  runDetached("flush", JSON.stringify({ cwd, session_id: input.session_id }));
+  enqueue(memoryKey(config, cwd, input.session_id), [{ role: "tool", text: summary, at: new Date().toISOString() }]);
   return "";
 }
