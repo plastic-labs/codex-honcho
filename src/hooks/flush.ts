@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { mkdirSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 import { loadConfig, sessionName, memoryKey } from "../config.ts";
-import { openSession } from "../memory.ts";
+import { getSession } from "../memory.ts";
 import { readQueue, sentCount, setSentCount, queueDir } from "../queue.ts";
 
 interface FlushInput {
@@ -64,7 +64,7 @@ export async function flush(input: FlushInput): Promise<string> {
     let start = sentCount(key);
     if (all.length - start <= 0) return "";
 
-    const { session, userPeer, aiPeer } = await openSession(config, name);
+    const { session, userPeer, aiPeer } = await getSession(config, name);
 
     // Upload in bounded chunks, advancing the sent marker after each so a
     // failure mid-drain keeps partial progress and retries from the right spot.

@@ -1,5 +1,5 @@
 import { loadConfig, sessionName, memoryKey } from "../config.ts";
-import { openSession, renderContext } from "../memory.ts";
+import { createSession, renderContext } from "../memory.ts";
 import { readContext, writeContext, isStale, markInjected } from "../cache.ts";
 
 interface RecallInput {
@@ -26,8 +26,8 @@ export async function recall(input: RecallInput): Promise<string> {
   const name = sessionName(config, cwd);
   const key = memoryKey(config, cwd, input.session_id);
 
-  // openSession also materializes peers, which writeback relies on.
-  const { userPeer } = await openSession(config, name);
+  // Create + materialize the session once, here at SessionStart.
+  const { userPeer } = await createSession(config, name);
 
   let ctx = !isStale(key, CACHE_TTL_MS) ? readContext(key) : null;
   if (!ctx) {
