@@ -1,16 +1,29 @@
 import { Honcho } from "@honcho-ai/sdk";
 import { honchoClientOptions, type Config } from "./config.ts";
 
-// Open the session and both peers, ensuring the session exists server-side.
-export async function openSession(config: Config, name: string) {
+async function sessionAndPeers(config: Config, name: string) {
   const honcho = new Honcho(honchoClientOptions(config));
   const [session, userPeer, aiPeer] = await Promise.all([
     honcho.session(name),
     honcho.peer(config.peerName),
     honcho.peer(config.aiPeer),
   ]);
-  await session.addPeers([userPeer, aiPeer]);
   return { session, userPeer, aiPeer };
+}
+
+// Deliberate session creation — run once at SessionStart. addPeers materializes
+// the session server-side and associates both peers (unified observation: the
+// user models themselves). The write path doesn't repeat this.
+export async function createSession(config: Config, name: string) {
+  const handles = await sessionAndPeers(config, name);
+  await handles.session.addPeers([handles.userPeer, handles.aiPeer]);
+  return handles;
+}
+
+// Write path: get handles without re-adding peers. The session was created at
+// SessionStart; messages from these peers associate with it on addMessages.
+export async function getSession(config: Config, name: string) {
+  return sessionAndPeers(config, name);
 }
 
 interface ContextResult {

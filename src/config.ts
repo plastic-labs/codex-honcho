@@ -1,6 +1,9 @@
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { currentBranch } from "./git.ts";
+
+export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
 
 // codex-honcho shares the ~/.honcho/config.json file with the other Honcho
 // integrations. Codex-specific settings live under hosts.codex; root fields
@@ -26,6 +29,7 @@ interface HostBlock {
   saveMessages?: boolean;
   reasoningLevel?: string;
   injectPerPrompt?: boolean;
+  sessionStrategy?: SessionStrategy;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
 }
 
@@ -47,6 +51,8 @@ export interface Config {
   // Inject prompt-relevant context on every turn. Off by default — lean
   // session-start context plus the MCP tools cover depth on demand.
   injectPerPrompt: boolean;
+  // How Honcho session names are derived (default per-directory).
+  sessionStrategy: SessionStrategy;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
   sessions?: Record<string, string>;
 }
@@ -88,6 +94,7 @@ export function loadConfig(): Config | null {
     saveMessages: (host?.saveMessages ?? raw.saveMessages) !== false,
     reasoningLevel: host?.reasoningLevel ?? raw.reasoningLevel ?? "low",
     injectPerPrompt: (host?.injectPerPrompt ?? raw.injectPerPrompt) === true,
+    sessionStrategy: host?.sessionStrategy ?? raw.sessionStrategy ?? "per-directory",
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,
   };
@@ -114,14 +121,32 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
 }
 
-// One stable session per project directory. No peer prefix — the workspace
-// already isolates a user's data, so the directory name alone is enough.
-export function sessionName(config: Config, cwd: string): string {
-  return config.sessions?.[cwd] ?? slug(basename(cwd));
+// Honcho session name. An explicit sessions[cwd] override always wins; otherwise
+// derived per strategy:
+//   per-directory  → <repo>                 (one session per project dir)
+//   git-branch     → <repo>-<branch>        (per branch; falls back to repo)
+//   chat-instance  → <repo>-<short id>      (one session per Codex conversation)
+// No peer prefix — the workspace already isolates a user's data.
+export function sessionName(config: Config, cwd: string, sessionId?: string): string {
+  const override = config.sessions?.[cwd];
+  if (override) return override;
+
+  const repo = slug(basename(cwd));
+  switch (config.sessionStrategy) {
+    case "git-branch": {
+      const branch = currentBranch(cwd);
+      return branch ? `${repo}-${slug(branch)}` : repo;
+    }
+    case "chat-instance":
+      return sessionId ? `${repo}-${slug(sessionId).slice(0, 8)}` : repo;
+    case "per-directory":
+    default:
+      return repo;
+  }
 }
 
-// Stable key for cursor/cache files: the Codex session id when present, else
-// the derived session name.
+// Stable key for cursor/cache/queue files: the Codex session id when present,
+// else the derived session name.
 export function memoryKey(config: Config, cwd: string, sessionId?: string): string {
-  return sessionId || sessionName(config, cwd);
+  return sessionId || sessionName(config, cwd, sessionId);
 }

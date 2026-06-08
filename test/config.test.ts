@@ -1,6 +1,6 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { loadConfig, sessionName } from "../src/config.ts";
 
@@ -80,4 +80,30 @@ test("explicit session override wins", () => {
   writeConfig({ apiKey: "k", peerName: "eri", sessions: { "/repo/x": "pinned-session" } });
   const cfg = loadConfig()!;
   expect(sessionName(cfg, "/repo/x")).toBe("pinned-session");
+});
+
+test("chat-instance strategy appends a short Codex session id", () => {
+  writeConfig({ apiKey: "k", peerName: "eri", hosts: { codex: { sessionStrategy: "chat-instance" } } });
+  const cfg = loadConfig()!;
+  expect(sessionName(cfg, "/repo/groudon", "019ea7df-805e-76d1-af52")).toBe("groudon-019ea7df");
+  // No session id → falls back to the directory.
+  expect(sessionName(cfg, "/repo/groudon")).toBe("groudon");
+});
+
+test("git-branch strategy appends the current branch", () => {
+  writeConfig({ apiKey: "k", peerName: "eri", sessionStrategy: "git-branch" });
+  const cfg = loadConfig()!;
+  // Build a fake repo dir with a branch ref.
+  const repo = mkdtempSync(join(tmpdir(), "codex-honcho-repo-"));
+  const repoDir = join(repo, "myproj");
+  mkdirSync(join(repoDir, ".git"), { recursive: true });
+  writeFileSync(join(repoDir, ".git", "HEAD"), "ref: refs/heads/feature/login\n");
+  expect(sessionName(cfg, repoDir)).toBe("myproj-feature-login");
+});
+
+test("git-branch falls back to directory outside a repo", () => {
+  writeConfig({ apiKey: "k", peerName: "eri", sessionStrategy: "git-branch" });
+  const cfg = loadConfig()!;
+  const plain = mkdtempSync(join(tmpdir(), "codex-honcho-plain-"));
+  expect(sessionName(cfg, plain)).toBe(basename(plain).toLowerCase().replace(/[^a-z0-9-_]/g, "-"));
 });

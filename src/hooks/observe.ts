@@ -1,6 +1,5 @@
 import { loadConfig, memoryKey } from "../config.ts";
 import { enqueue } from "../queue.ts";
-import { runDetached } from "../background.ts";
 
 interface ObserveInput {
   tool_name?: string;
@@ -10,8 +9,19 @@ interface ObserveInput {
   session_id?: string;
 }
 
-// Skip read-only/navigation shell commands that carry no memory signal.
-const TRIVIAL_SHELL = ["cd", "ls", "pwd", "echo", "cat", "head", "tail", "which", "type", "git status", "git log", "git diff"];
+// Read-only/inspection commands carry no memory signal — skip them so a single
+// review or search turn doesn't flood memory.
+const TRIVIAL_SHELL = [
+  "cd", "ls", "pwd", "echo", "cat", "head", "tail", "which", "type",
+  "grep", "rg", "find", "fd", "wc", "sed", "awk", "less", "more", "stat",
+  "file", "tree", "du", "df", "env", "printf", "sort", "uniq", "cut", "jq",
+  "open", "true", "sleep", "date",
+  "git status", "git log", "git diff", "git show", "git branch",
+];
+
+// Codex names the shell tool "Bash" in hook payloads; "shell"/"local_shell"/
+// "exec" are the API/rollout names. Match all so the filter actually applies.
+const SHELL_TOOLS = new Set(["Bash", "shell", "local_shell", "exec"]);
 
 function shellCommand(input: Record<string, unknown>): string {
   const cmd = input.command;
@@ -28,10 +38,10 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
   // circular noise that pollutes the representation.
   if (name.startsWith("mcp__honcho")) return "";
 
-  if (name === "shell" || name === "local_shell" || name === "exec") {
+  if (SHELL_TOOLS.has(name)) {
     const cmd = shellCommand(input).trim();
     if (!cmd) return "";
-    if (TRIVIAL_SHELL.some((t) => cmd.startsWith(t))) return "";
+    if (TRIVIAL_SHELL.some((t) => cmd === t || cmd.startsWith(t + " "))) return "";
     return `ran: ${cmd.slice(0, 120)}`;
   }
 
@@ -45,8 +55,9 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
   return `used ${name}`;
 }
 
-// PostToolUse: queue a terse observation of meaningful tool activity, then kick
-// a background flush. Local + instant; the upload happens async.
+// PostToolUse: queue a terse observation of meaningful tool activity. Enqueue
+// only — instant, no network. The next writeback (Stop) flushes it along with
+// the turn, so frequent tool calls never trigger an upload of their own.
 export async function observe(input: ObserveInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled || !config.saveMessages) return "";
@@ -55,8 +66,6 @@ export async function observe(input: ObserveInput): Promise<string> {
   if (!summary) return "";
 
   const cwd = input.cwd || process.cwd();
-  const key = memoryKey(config, cwd, input.session_id);
-  enqueue(key, [{ role: "tool", text: summary, at: new Date().toISOString() }]);
-  runDetached("flush", JSON.stringify({ cwd, session_id: input.session_id }));
+  enqueue(memoryKey(config, cwd, input.session_id), [{ role: "tool", text: summary, at: new Date().toISOString() }]);
   return "";
 }

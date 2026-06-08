@@ -14,6 +14,20 @@ test("drops trivial read-only shell commands", () => {
   expect(summarizeTool("shell", { command: "git status" })).toBe("");
 });
 
+test("matches Codex's 'Bash' tool name (the flood bug) and filters read-only", () => {
+  // Codex sends tool_name "Bash" — these must be summarized, not fall through.
+  expect(summarizeTool("Bash", { command: "npm run build" })).toBe("ran: npm run build");
+  // ...and read-only ones must be dropped, not recorded as "used Bash".
+  expect(summarizeTool("Bash", { command: "grep -r foo src" })).toBe("");
+  expect(summarizeTool("Bash", { command: "find . -name '*.ts'" })).toBe("");
+  expect(summarizeTool("Bash", { command: "git status -s" })).toBe("");
+});
+
+test("trivial match respects word boundaries", () => {
+  // "catalog" must not be skipped just because it starts with "cat".
+  expect(summarizeTool("Bash", { command: "catalog --build" })).toBe("ran: catalog --build");
+});
+
 test("extracts edited files from an apply_patch", () => {
   const patch = "*** Begin Patch\n*** Update File: src/a.ts\n+x\n*** Add File: src/b.ts\n+y\n*** End Patch";
   expect(summarizeTool("apply_patch", { input: patch })).toBe("edited: src/a.ts, src/b.ts");
