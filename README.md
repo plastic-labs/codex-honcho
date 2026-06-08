@@ -1,40 +1,10 @@
 # codex-honcho
 
-Persistent memory for [OpenAI Codex](https://developers.openai.com/codex) sessions, backed by [Honcho](https://honcho.dev).
+Gives [OpenAI Codex](https://developers.openai.com/codex) a memory. It quietly records your Codex sessions into [Honcho](https://honcho.dev) and feeds the useful bits back at the start of each session, so Codex actually remembers you across conversations.
 
-A harness-level integration: Codex lifecycle hooks feed every turn into Honcho and surface relevant context back at prompt time, so the model remembers across sessions. Sibling to [`claude-honcho`](https://github.com/plastic-labs/claude-honcho) — same memory backend, different harness.
+Sibling to [`claude-honcho`](https://github.com/plastic-labs/claude-honcho) — same memory backend, just wired into Codex's hooks instead.
 
-## What it does
-
-```
-┌─ Codex session ──────────────────────────────────────────────┐
-│                                                               │
-│  SessionStart ──▶ recall    ──▶ inject context + dialectic    │
-│  UserPromptSubmit ─▶ prompt  ──▶ inject prompt-relevant memory │
-│  PostToolUse  ──▶ observe   ──▶ record tool activity          │
-│  Stop / PreCompact ─▶ writeback ─▶ ship new turns to Honcho    │
-│                                                               │
-└───────────────────────────┬───────────────────────────────────┘
-                            │  reads/writes
-                  ┌─────────▼──────────┐      ┌────────────────────┐
-                  │  Honcho API (SDK)  │      │  Honcho hosted MCP  │
-                  │  context · messages│      │  mcp.honcho.dev     │
-                  └────────────────────┘      │  search · chat · …  │
-                                              └────────────────────┘
-```
-
-- **Read path** — `recall` (SessionStart) and `prompt` (UserPromptSubmit) print a `<honcho-memory>` block to stdout, which Codex injects as context. `recall` also fires bounded dialectic reasoning to keep Honcho's model of you sharp, and re-runs after compaction.
-- **Write path** — `writeback` runs on every `Stop` (Codex is turn-scoped; there's no SessionEnd) and on `PreCompact`. It reads the session rollout and ships only the turns added since the last cursor — no daemon, no duplicates.
-- **Active recall** — the hosted Honcho MCP (`mcp.honcho.dev`) is registered in Codex so the model can `search` / `chat` / `get_context` on demand. A bundled `honcho-memory` skill tells it when to.
-
-## Requirements
-
-- [Codex CLI](https://developers.openai.com/codex) with hooks support
-- [bun](https://bun.sh)
-- A Honcho API key — via the [Honcho CLI](https://honcho.dev): `uv tool install honcho-cli && honcho init` (writes `~/.honcho/config.json`), or `export HONCHO_API_KEY=hch-…`
-- `npx` on PATH (the MCP registration uses `mcp-remote`)
-
-## Install
+## Quick start
 
 ```bash
 git clone https://github.com/plastic-labs/codex-honcho
@@ -42,33 +12,62 @@ cd codex-honcho
 ./install.sh
 ```
 
-Or manually:
+Then restart Codex. That's it.
+
+You'll need three things first:
+- **[bun](https://bun.sh)** installed
+- **a Honcho API key** — easiest via the CLI: `uv tool install honcho-cli && honcho init` (writes `~/.honcho/config.json`). Or just `export HONCHO_API_KEY=hch-…`.
+- **`npx`** on your PATH (used to wire up the Honcho MCP)
+
+No key yet? `install.sh` still sets up the hooks and tells you what to do — just re-run it after `honcho init`.
+
+## Living with it
 
 ```bash
-bun install
-bun run bin/codex-honcho.ts install
+bun run bin/codex-honcho.ts status     # what's installed + how many messages are waiting to upload
+bun run bin/codex-honcho.ts remove     # clean uninstall — only touches what we added
+tail -f ~/.honcho/codex/queue/*.jsonl  # watch it record you, live
 ```
 
-Then restart Codex. Check state any time:
+Your memory shows up at [app.honcho.dev](https://app.honcho.dev) — look under the workspace named in your config (`codex` if you set one, otherwise whatever your root workspace is).
 
-```bash
-bun run bin/codex-honcho.ts status
-bun run bin/codex-honcho.ts remove   # clean uninstall
+## How it works
+
+Codex fires hooks at certain moments; we hang four small jobs off them. Capture is local and instant — the only thing that talks to the network is the flush at the end of a turn.
+
+```
+in your Codex session (local, instant)          Honcho (your memory)
+────────────────────────────────────            ────────────────────
+session starts   → recall      → drops a short "here's what I know
+                                  about you" note into context  ◀──── reads your profile
+
+you send a turn  → (nothing, by default — Codex
+                    can pull more via the MCP tools)  ─────────────▶ search · chat · get_context
+                                                                     (mcp.honcho.dev)
+
+a tool runs      → observe     → jots a one-line note to a local queue
+
+turn ends        → writeback   → appends the turn to the queue,
+                                  then uploads everything pending ───▶ your session's messages
 ```
 
-## What install writes
+The queue (`~/.honcho/codex/queue/`) is just an append-only file you can read. Nothing is lost if an upload fails — it stays queued and retries next turn.
 
-| Path | Change |
+A bundled `honcho-memory` skill nudges Codex to actually *use* the memory tools when a task depends on your history, instead of guessing.
+
+## What `install` touches
+
+| File | What we do |
 |---|---|
-| `~/.codex/hooks.json` | adds the codex-honcho hook entries (merged, never clobbers yours) |
-| `~/.codex/config.toml` | sets `[features].hooks = true` and registers `[mcp_servers.honcho]` |
-| `~/.codex/skills/honcho-memory/` | installs the active-recall skill |
+| `~/.codex/hooks.json` | add our four hook entries (merged in — your other hooks are untouched) |
+| `~/.codex/config.toml` | turn on `[features].hooks` and register the Honcho MCP server |
+| `~/.codex/skills/honcho-memory/` | drop in the memory skill |
 
-`remove` strips exactly these and leaves everything else intact.
+`remove` strips exactly those and leaves everything else alone.
 
-## Configuration
+## Config
 
-codex-honcho reads `~/.honcho/config.json` (shared with the other Honcho integrations). Codex-specific settings live under `hosts.codex`; root fields are the fallback.
+All optional. Lives in `~/.honcho/config.json` (shared with the other Honcho tools); Codex-specific bits go under `hosts.codex`.
 
 ```json
 {
@@ -77,40 +76,41 @@ codex-honcho reads `~/.honcho/config.json` (shared with the other Honcho integra
   "hosts": {
     "codex": {
       "workspace": "codex",
-      "aiPeer": "codex",
-      "reasoningLevel": "low",
-      "saveMessages": true,
-      "enabled": true,
-      "sessionStrategy": "per-directory"
+      "sessionStrategy": "per-directory",
+      "injectPerPrompt": false,
+      "saveMessages": true
     }
   }
 }
 ```
 
-`sessionStrategy` controls how Honcho session names are derived:
-
-- `per-directory` (default) — one session per project dir (`groudon`)
-- `git-branch` — one per branch (`groudon-main`); falls back to the dir outside a repo
-- `chat-instance` — one per Codex conversation (`groudon-019ea7df`)
+- **`workspace`** — set this to keep Codex memory separate from Claude's. Leave it off and they share one.
+- **`sessionStrategy`** — how sessions get named:
+  - `per-directory` *(default)* — one per project folder → `groudon`
+  - `git-branch` — one per branch → `groudon-main`
+  - `chat-instance` — one per Codex conversation → `groudon-019ea7df`
+- **`injectPerPrompt`** — `true` re-injects context every turn. Off by default; the MCP tools cover depth.
+- **`saveMessages`** — `false` to read memory but never write.
 
 Env overrides: `HONCHO_API_KEY`, `HONCHO_PEER_NAME`, `HONCHO_CONFIG_DIR`.
 
 ## Layout
 
 ```
-bin/codex-honcho.ts      CLI: install · remove · status · <hook-verb>
-src/transcript/codex.ts  Codex rollout (.jsonl) reader
-src/connectors/          installs hooks · MCP server · skill into ~/.codex
-src/hooks/               recall · prompt · observe · writeback
-src/cursor.ts            per-turn writeback delta tracker
-src/config.ts            resolves the `codex` host from ~/.honcho/config.json
-skills/honcho-memory/    active-recall guidance for the model
+bin/codex-honcho.ts      the CLI: install · remove · status · <hook>
+src/hooks/               recall · prompt · observe · writeback · flush
+src/transcript/codex.ts  reads Codex's rollout (.jsonl) transcripts
+src/queue.ts             the local outbox (capture now, upload later)
+src/cursor.ts            tracks which turns we've already captured
+src/connectors/          writes hooks / MCP / skill into ~/.codex
+src/config.ts            resolves the codex host from ~/.honcho/config.json
+skills/honcho-memory/    tells Codex when to reach for memory
 ```
 
 ## Development
 
 ```bash
-bun test          # unit suite
+bun test
 bun run typecheck
 ```
 
