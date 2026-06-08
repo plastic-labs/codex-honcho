@@ -55,7 +55,7 @@ export async function flush(input: FlushInput): Promise<string> {
   if (!config || !config.enabled || !config.saveMessages) return "";
 
   const cwd = input.cwd || process.cwd();
-  const name = sessionName(config, cwd);
+  const name = sessionName(config, cwd, input.session_id);
   const key = memoryKey(config, cwd, input.session_id);
 
   if (!acquireLock(key)) return "";

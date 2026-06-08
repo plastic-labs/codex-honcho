@@ -80,11 +80,18 @@ codex-honcho reads `~/.honcho/config.json` (shared with the other Honcho integra
       "aiPeer": "codex",
       "reasoningLevel": "low",
       "saveMessages": true,
-      "enabled": true
+      "enabled": true,
+      "sessionStrategy": "per-directory"
     }
   }
 }
 ```
+
+`sessionStrategy` controls how Honcho session names are derived:
+
+- `per-directory` (default) — one session per project dir (`groudon`)
+- `git-branch` — one per branch (`groudon-main`); falls back to the dir outside a repo
+- `chat-instance` — one per Codex conversation (`groudon-019ea7df`)
 
 Env overrides: `HONCHO_API_KEY`, `HONCHO_PEER_NAME`, `HONCHO_CONFIG_DIR`.
 

@@ -23,7 +23,7 @@ export async function recall(input: RecallInput): Promise<string> {
   if (!config || !config.enabled) return "";
 
   const cwd = input.cwd || process.cwd();
-  const name = sessionName(config, cwd);
+  const name = sessionName(config, cwd, input.session_id);
   const key = memoryKey(config, cwd, input.session_id);
 
   // Create + materialize the session once, here at SessionStart.
