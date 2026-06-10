@@ -12,7 +12,7 @@ interface FlushInput {
 const MAX_CHARS = 4000;
 const CHUNK_SIZE = 25;
 
-function lockPath(key: string): string {
+export function lockPath(key: string): string {
   return join(queueDir(), `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.lock`);
 }
 
