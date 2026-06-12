@@ -9,24 +9,20 @@ interface FlushInput {
   session_id?: string;
 }
 
-const MAX_CHARS = 4000;
-const CHUNK_SIZE = 25;
+// Honcho's per-message content ceiling is ~25k chars; stay just under it.
+const MAX_CHARS = 24000;
+// Honcho rejects an addMessages call with more than 100 messages. SOFT_BATCH is
+// the flush target; MAX_BATCH is the hard ceiling we never cross in one call.
+const SOFT_BATCH = 50;
+const MAX_BATCH = 100;
 
 type SessionHandles = Awaited<ReturnType<typeof getSession>>;
 type PeerMessage = ReturnType<SessionHandles["userPeer"]["message"]>;
 
-interface PartialProgress {
-  entryIndex: number;
-  messageIndex: number;
-}
-
-interface BatchProgress {
-  sentCount: number;
-  partial: PartialProgress | null;
-}
-
 // Split an oversized body into <=MAX_CHARS pieces, preferring a newline/space
 // boundary, so a long turn is preserved across parts instead of truncated.
+// Capped at MAX_BATCH parts so one queue entry never exceeds a single upload
+// call — a >2.4MB single turn (effectively impossible) drops its overflow tail.
 function chunkText(text: string, max = MAX_CHARS): string[] {
   if (text.length <= max) return [text];
   let total = 1;
@@ -41,6 +37,8 @@ function chunkText(text: string, max = MAX_CHARS): string[] {
     }
     total = chunks.length;
   }
+  if (chunks.length > MAX_BATCH) chunks = chunks.slice(0, MAX_BATCH);
+  total = chunks.length;
   return chunks.map((c, i) => `[part ${i + 1}/${total}] ${c}`);
 }
 
@@ -64,41 +62,6 @@ function safeKey(key: string): string {
 
 export function lockPath(key: string): string {
   return join(queueDir(), `${safeKey(key)}.lock`);
-}
-
-function partialPath(key: string): string {
-  return join(queueDir(), `${safeKey(key)}.partial`);
-}
-
-function readPartialProgress(key: string, minEntry: number, totalEntries: number): PartialProgress | null {
-  try {
-    const parsed = JSON.parse(readFileSync(partialPath(key), "utf-8")) as PartialProgress;
-    if (
-      Number.isInteger(parsed.entryIndex) &&
-      Number.isInteger(parsed.messageIndex) &&
-      parsed.entryIndex >= minEntry &&
-      parsed.entryIndex < totalEntries &&
-      parsed.messageIndex > 0
-    ) {
-      return parsed;
-    }
-  } catch {
-    // no partial progress
-  }
-  return null;
-}
-
-function setPartialProgress(key: string, progress: PartialProgress): void {
-  mkdirSync(queueDir(), { recursive: true });
-  writeFileSync(partialPath(key), JSON.stringify(progress));
-}
-
-function clearPartialProgress(key: string): void {
-  try {
-    unlinkSync(partialPath(key));
-  } catch {
-    // already gone
-  }
 }
 
 function messagesForEntry(
@@ -162,42 +125,34 @@ export async function flush(input: FlushInput): Promise<string> {
   try {
     const all = readQueue(key);
     const start = sentCount(key);
-    const partial = readPartialProgress(key, start, all.length);
-    const startEntry = partial?.entryIndex ?? start;
-    if (all.length - startEntry <= 0) {
-      clearPartialProgress(key);
-      return "";
-    }
+    if (all.length - start <= 0) return "";
 
     const { session, userPeer, aiPeer } = await getSession(config, name);
     let batch: PeerMessage[] = [];
-    let progressAfterBatch: BatchProgress = { sentCount: start, partial };
 
-    async function uploadBatch(): Promise<void> {
-      if (batch.length === 0) return;
-      await session.addMessages(batch);
-      setSentCount(key, progressAfterBatch.sentCount);
-      if (progressAfterBatch.partial) setPartialProgress(key, progressAfterBatch.partial);
-      else clearPartialProgress(key);
-      batch = [];
-    }
-
-    // Upload in bounded Honcho-message chunks. The sent marker still tracks
-    // fully uploaded queue entries; .partial tracks the rare case where one
-    // queue entry expands across multiple upload calls.
-    for (let i = startEntry; i < all.length; i++) {
+    // Drain pending entries in order, flushing only at entry boundaries so the
+    // sent marker always lands on a fully-uploaded entry — a failure mid-drain
+    // just retries from the last completed entry, no sub-entry bookkeeping.
+    // SOFT_BATCH is the flush target; the pre-flush guard keeps any single call
+    // within Honcho's MAX_BATCH messages-per-request limit.
+    for (let i = start; i < all.length; i++) {
       const messages = messagesForEntry(all[i], userPeer, aiPeer);
-      const messageStart = partial?.entryIndex === i ? partial.messageIndex : 0;
-      for (let j = messageStart; j < messages.length; j++) {
-        batch.push(messages[j]);
-        progressAfterBatch =
-          j === messages.length - 1
-            ? { sentCount: i + 1, partial: null }
-            : { sentCount: i, partial: { entryIndex: i, messageIndex: j + 1 } };
-        if (batch.length === CHUNK_SIZE) await uploadBatch();
+      if (batch.length > 0 && batch.length + messages.length > MAX_BATCH) {
+        await session.addMessages(batch);
+        setSentCount(key, i);
+        batch = [];
+      }
+      batch.push(...messages);
+      if (batch.length >= SOFT_BATCH) {
+        await session.addMessages(batch);
+        setSentCount(key, i + 1);
+        batch = [];
       }
     }
-    await uploadBatch();
+    if (batch.length > 0) {
+      await session.addMessages(batch);
+      setSentCount(key, all.length);
+    }
   } finally {
     releaseLock(key);
   }

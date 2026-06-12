@@ -79,33 +79,35 @@ test("nothing pending → no upload", async () => {
   expect(batches).toEqual([]);
 });
 
-test("uploads in chunks of 25 and advances the marker per chunk", async () => {
-  enqueue("s1", manyEntries(30));
+test("flushes at the soft batch target on entry boundaries", async () => {
+  enqueue("s1", manyEntries(60));
 
   await runFlush();
 
   expect(addCalls).toBe(2);
-  expect(batches[0].length).toBe(25);
-  expect(batches[1].length).toBe(5);
-  expect(sentCount("s1")).toBe(30);
+  expect(batches[0].length).toBe(50);
+  expect(batches[1].length).toBe(10);
+  expect(sentCount("s1")).toBe(60);
 });
 
-test("a mid-drain failure keeps partial progress and resends only the remainder", async () => {
-  enqueue("s1", manyEntries(30));
-  failOnCalls = new Set([2]); // first chunk lands, second throws
+test("a mid-drain failure keeps completed entries and resends only the remainder", async () => {
+  enqueue("s1", manyEntries(60));
+  failOnCalls = new Set([2]); // first batch lands, second throws
 
   await expect(runFlush()).rejects.toThrow();
 
-  // First chunk's marker advanced; the failed chunk is still pending.
-  expect(sentCount("s1")).toBe(25);
-  expect(pendingCount("s1")).toBe(5);
+  // First batch's marker advanced; the failed batch is still pending.
+  expect(sentCount("s1")).toBe(50);
+  expect(pendingCount("s1")).toBe(10);
 
-  // Retry: only the remaining 5 go up, no re-send of the first 25.
+  // Retry: only the remaining 10 go up, no re-send of the first 50.
   batches = [];
   await runFlush();
-  expect(batches.flat().length).toBe(5);
-  expect(batches.flat().map((m) => m.text)).toEqual(["m25", "m26", "m27", "m28", "m29"]);
-  expect(sentCount("s1")).toBe(30);
+  expect(batches.flat().length).toBe(10);
+  expect(batches.flat().map((m) => m.text)).toEqual(
+    Array.from({ length: 10 }, (_, i) => `m${50 + i}`),
+  );
+  expect(sentCount("s1")).toBe(60);
 });
 
 test("a first-chunk failure leaves the marker at zero so the whole batch retries", async () => {
@@ -140,44 +142,52 @@ test("tool entries get a [tool] prefix and type metadata; user/assistant route t
 });
 
 test("splits an oversized message into parts instead of dropping the tail", async () => {
-  enqueue("s1", [{ role: "user", text: "x".repeat(5000), at: "2026-06-09T00:00:00Z" }]);
+  enqueue("s1", [{ role: "user", text: "x".repeat(30000), at: "2026-06-09T00:00:00Z" }]);
   await runFlush();
 
   const msgs = batches.flat();
-  expect(msgs.length).toBe(2); // 4000 + 1000, each labeled
-  expect(msgs.every((m) => m.text.length <= 4000)).toBe(true);
+  expect(msgs.length).toBe(2); // ~24000 + remainder, each labeled
+  expect(msgs.every((m) => m.text.length <= 24000)).toBe(true);
   // Nothing lost: strip the part labels and the original reassembles.
   const rejoined = msgs.map((m) => m.text.replace(/^\[part \d+\/\d+\] /, "")).join("");
-  expect(rejoined).toBe("x".repeat(5000));
+  expect(rejoined).toBe("x".repeat(30000));
   // Still one queue entry → marker advances by 1, not by message count.
   expect(sentCount("s1")).toBe(1);
 });
 
-test("caps upload calls by generated Honcho message count", async () => {
-  enqueue("s1", manyEntries(25).map((entry) => ({ ...entry, text: "x".repeat(5000) })));
+test("an ordinary long turn stays a single message", async () => {
+  enqueue("s1", [{ role: "user", text: "x".repeat(20000), at: "2026-06-09T00:00:00Z" }]);
+  await runFlush();
+
+  const msgs = batches.flat();
+  expect(msgs.length).toBe(1);
+  expect(msgs[0].text).toBe("x".repeat(20000)); // no part label, no split
+  expect(sentCount("s1")).toBe(1);
+});
+
+test("keeps every upload call within Honcho's 100-message limit", async () => {
+  // 49 single-message entries build the batch to 49, then one entry whose parts
+  // would overflow 100 forces a pre-flush at the entry boundary.
+  enqueue("s1", manyEntries(49));
+  enqueue("s1", [{ role: "user", text: "x".repeat(60 * 24000), at: "2026-06-09T00:00:00Z" }]);
 
   await runFlush();
 
-  expect(addCalls).toBe(2);
-  expect(batches.map((batch) => batch.length)).toEqual([25, 25]);
-  expect(sentCount("s1")).toBe(25);
+  expect(batches.every((batch) => batch.length <= 100)).toBe(true);
+  expect(batches[0].length).toBe(49); // pre-flushed at the boundary before the big entry
+  expect(sentCount("s1")).toBe(50);
   expect(pendingCount("s1")).toBe(0);
 });
 
-test("resumes inside one oversized queue entry without resending uploaded parts", async () => {
-  enqueue("s1", [{ role: "user", text: "x".repeat(100000), at: "2026-06-09T00:00:00Z" }]);
-  failOnCalls = new Set([2]); // first 25 generated messages land, second call throws
+test("clamps a single giant entry to one upload call, never resending it", async () => {
+  // ~125 parts unclamped; clamped to the 100-message ceiling so it fits one call.
+  enqueue("s1", [{ role: "user", text: "x".repeat(3_000_000), at: "2026-06-09T00:00:00Z" }]);
 
-  await expect(runFlush()).rejects.toThrow();
-
-  expect(batches.map((batch) => batch.length)).toEqual([25]);
-  expect(sentCount("s1")).toBe(0);
-  expect(pendingCount("s1")).toBe(1);
-
-  batches = [];
   await runFlush();
 
-  expect(batches.flat().length).toBe(1);
+  expect(addCalls).toBe(1);
+  expect(batches[0].length).toBe(100);
+  // One queue entry, fully uploaded → marker advances by exactly 1.
   expect(sentCount("s1")).toBe(1);
   expect(pendingCount("s1")).toBe(0);
 });
