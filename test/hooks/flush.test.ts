@@ -139,10 +139,17 @@ test("tool entries get a [tool] prefix and type metadata; user/assistant route t
   expect(msgs[0].opts?.metadata).toBeUndefined();
 });
 
-test("truncates an oversized message to MAX_CHARS", async () => {
+test("splits an oversized message into parts instead of dropping the tail", async () => {
   enqueue("s1", [{ role: "user", text: "x".repeat(5000), at: "2026-06-09T00:00:00Z" }]);
   await runFlush();
-  expect(batches.flat()[0].text.length).toBe(4000);
+
+  const msgs = batches.flat();
+  expect(msgs.length).toBe(2); // 4000 + 1000, each labeled
+  // Nothing lost: strip the part labels and the original reassembles.
+  const rejoined = msgs.map((m) => m.text.replace(/^\[part \d+\/\d+\] /, "")).join("");
+  expect(rejoined).toBe("x".repeat(5000));
+  // Still one queue entry → marker advances by 1, not by message count.
+  expect(sentCount("s1")).toBe(1);
 });
 
 test("skips when a live process already holds the lock", async () => {

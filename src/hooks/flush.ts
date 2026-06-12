@@ -12,6 +12,23 @@ interface FlushInput {
 const MAX_CHARS = 4000;
 const CHUNK_SIZE = 25;
 
+// Split an oversized body into <=MAX_CHARS pieces, preferring a newline/space
+// boundary, so a long turn is preserved across parts instead of truncated.
+function chunkText(text: string, max = MAX_CHARS): string[] {
+  if (text.length <= max) return [text];
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf("\n", max);
+    if (cut < max * 0.25) cut = rest.lastIndexOf(" ", max);
+    if (cut < max * 0.25) cut = max;
+    chunks.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks.map((c, i) => `[part ${i + 1}/${chunks.length}] ${c}`);
+}
+
 export function lockPath(key: string): string {
   return join(queueDir(), `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.lock`);
 }
@@ -70,13 +87,15 @@ export async function flush(input: FlushInput): Promise<string> {
     // failure mid-drain keeps partial progress and retries from the right spot.
     for (let i = start; i < all.length; i += CHUNK_SIZE) {
       const chunk = all.slice(i, i + CHUNK_SIZE);
-      const messages = chunk.map((entry) => {
+      const messages = chunk.flatMap((entry) => {
         const peer = entry.role === "user" ? userPeer : aiPeer;
-        const text = entry.role === "tool" ? `[tool] ${entry.text}` : entry.text;
-        return peer.message(text.slice(0, MAX_CHARS), {
-          createdAt: entry.at,
-          ...(entry.role === "tool" ? { metadata: { type: "tool" } } : {}),
-        });
+        const body = entry.role === "tool" ? `[tool] ${entry.text}` : entry.text;
+        return chunkText(body).map((piece) =>
+          peer.message(piece, {
+            createdAt: entry.at,
+            ...(entry.role === "tool" ? { metadata: { type: "tool" } } : {}),
+          }),
+        );
       });
       await session.addMessages(messages);
       start += chunk.length;
