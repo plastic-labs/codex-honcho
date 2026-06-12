@@ -145,11 +145,41 @@ test("splits an oversized message into parts instead of dropping the tail", asyn
 
   const msgs = batches.flat();
   expect(msgs.length).toBe(2); // 4000 + 1000, each labeled
+  expect(msgs.every((m) => m.text.length <= 4000)).toBe(true);
   // Nothing lost: strip the part labels and the original reassembles.
   const rejoined = msgs.map((m) => m.text.replace(/^\[part \d+\/\d+\] /, "")).join("");
   expect(rejoined).toBe("x".repeat(5000));
   // Still one queue entry → marker advances by 1, not by message count.
   expect(sentCount("s1")).toBe(1);
+});
+
+test("caps upload calls by generated Honcho message count", async () => {
+  enqueue("s1", manyEntries(25).map((entry) => ({ ...entry, text: "x".repeat(5000) })));
+
+  await runFlush();
+
+  expect(addCalls).toBe(2);
+  expect(batches.map((batch) => batch.length)).toEqual([25, 25]);
+  expect(sentCount("s1")).toBe(25);
+  expect(pendingCount("s1")).toBe(0);
+});
+
+test("resumes inside one oversized queue entry without resending uploaded parts", async () => {
+  enqueue("s1", [{ role: "user", text: "x".repeat(100000), at: "2026-06-09T00:00:00Z" }]);
+  failOnCalls = new Set([2]); // first 25 generated messages land, second call throws
+
+  await expect(runFlush()).rejects.toThrow();
+
+  expect(batches.map((batch) => batch.length)).toEqual([25]);
+  expect(sentCount("s1")).toBe(0);
+  expect(pendingCount("s1")).toBe(1);
+
+  batches = [];
+  await runFlush();
+
+  expect(batches.flat().length).toBe(1);
+  expect(sentCount("s1")).toBe(1);
+  expect(pendingCount("s1")).toBe(0);
 });
 
 test("skips when a live process already holds the lock", async () => {
