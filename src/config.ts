@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join, basename, dirname } from "node:path";
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { currentBranch } from "./git.ts";
 
 export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
@@ -122,9 +122,14 @@ export function saveConfig(patch: { apiKey?: string; peerName?: string }): strin
   if (patch.apiKey) raw.apiKey = patch.apiKey;
   if (patch.peerName) raw.peerName = patch.peerName;
 
+  // The file holds the API key, so keep it user-only. mode on mkdir/write only
+  // applies when they create the target; chmod then enforces 0600 even if the
+  // file already existed with looser perms. (We don't re-chmod the shared
+  // ~/.honcho dir — the honcho CLI owns it and intentionally creates it 0755.)
   const path = configPath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(raw, null, 2) + "\n");
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(path, JSON.stringify(raw, null, 2) + "\n", { mode: 0o600 });
+  chmodSync(path, 0o600);
   return path;
 }
 
