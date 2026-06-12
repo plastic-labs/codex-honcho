@@ -17,9 +17,10 @@
   "homepage": "https://honcho.dev",
   "repository": "https://github.com/plastic-labs/codex-honcho",
   "bin": {
-    "codex-honcho": "./bin/codex-honcho.ts"
+    "codex-honcho": "./dist/codex-honcho.mjs"
   },
   "files": [
+    "dist",
     "bin",
     "src",
     "skills",
@@ -30,7 +31,8 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck"
+    "build": "node build.mjs",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "publishConfig": {
     "access": "public"
@@ -41,6 +43,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "esbuild": "^0.25.0",
     "typescript": "^5.0.0"
   }
 }

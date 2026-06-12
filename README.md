@@ -33,7 +33,7 @@ Capture never hits the network. `flush` is lock-guarded and advances the sent ma
 
 ## Install
 
-Requires [bun](https://bun.sh) on PATH (the hooks run under bun), a Honcho API key (from [app.honcho.dev](https://app.honcho.dev), saved via `honcho init` or `HONCHO_API_KEY`), and `npx` on PATH (for the MCP `mcp-remote` bridge).
+Requires [Node](https://nodejs.org) on PATH (the published hooks are bundled and run under `node` — no bun needed), a Honcho API key (from [app.honcho.dev](https://app.honcho.dev), saved via `honcho init` or `HONCHO_API_KEY`), and `npx` on PATH (for the MCP `mcp-remote` bridge; ships with Node).
 
 ```bash
 npm install -g @honcho-ai/codex-honcho
@@ -58,7 +58,7 @@ cd codex-honcho
 ./install.sh              # bun install + bun run bin/codex-honcho.ts install
 ```
 
-The clone path wires the hooks to this directory's absolute path, so keep the clone in place. The npm install wires them to the `codex-honcho` bin on PATH instead, so it survives `npm update`.
+The clone path runs the TypeScript source directly and so **requires [bun](https://bun.sh)**; it wires the hooks to `bun run <this dir>/bin/codex-honcho.ts`, so keep the clone in place. The npm install instead ships a bundled `dist/codex-honcho.mjs` and wires hooks to `node "<abs path>"` — node-only, and stable across `npm update`.
 
 ## What install writes
 

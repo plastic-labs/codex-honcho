@@ -1,5 +1,4 @@
-#!/usr/bin/env bun
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { dispatch, isVerb } from "../src/dispatch.ts";
 import {
   installCodexHooks,
@@ -21,8 +20,18 @@ const INJECT_EVENT: Record<string, string> = {
   prompt: "UserPromptSubmit",
 };
 
+// Read all of stdin (the hook payload Codex pipes in). Node-compatible so the
+// bundled build runs under plain `node`; returns "" for an interactive TTY so a
+// manual run doesn't hang waiting for EOF.
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return "";
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Uint8Array);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 async function runHook(verb: string): Promise<void> {
-  const stdin = await Bun.stdin.text();
+  const stdin = await readStdin();
   if (!isVerb(verb)) return;
 
   try {
@@ -49,16 +58,14 @@ function mcpIdentity(): McpIdentity | null {
   };
 }
 
-// The shell command each Codex hook runs. When the `codex-honcho` bin is
-// installed (npm), wire hooks to its *resolved absolute path* — PATH-independent
-// (Codex's hook runner may not have the npm global bin dir on PATH) and stable
-// across `npm update` (the global shim path is constant). Fall back to an
-// absolute `bun run` against this file for a local/dev clone not yet installed.
+// The shell command each Codex hook runs. Wire hooks to this entry's *absolute*
+// path (PATH-independent; Codex's hook runner may have a minimal PATH). The
+// bundled build is JS run under `node` (no bun required); a local/dev clone is
+// TypeScript run under `bun`. Detect which by the entry's extension.
 function hookInvoke(): (verb: string) => string {
-  const bin = Bun.which("codex-honcho");
-  if (bin) return (verb) => `${JSON.stringify(bin)} ${verb}`;
-  const self = fileURLToPath(import.meta.url);
-  return (verb) => `bun run ${JSON.stringify(self)} ${verb}`;
+  const self = resolve(process.argv[1] ?? "");
+  const runner = self.endsWith(".ts") ? "bun run" : "node";
+  return (verb) => `${runner} ${JSON.stringify(self)} ${verb}`;
 }
 
 // Make ~/.honcho/config.json the source of truth. A key already present (root

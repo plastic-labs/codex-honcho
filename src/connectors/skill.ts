@@ -7,7 +7,22 @@ import { codexHome } from "./codex.ts";
 // one that tells the model when to actively query and save Honcho memory.
 
 const SKILL_NAME = "honcho-memory";
-const SKILL_SOURCE = fileURLToPath(new URL("../../skills/honcho-memory/SKILL.md", import.meta.url));
+
+// Locate the source SKILL.md across the layouts we run in: the bundled build
+// (dist/codex-honcho.cjs alongside dist/skills/, copied by build.mjs) and a
+// source checkout (src/connectors/skill.ts → ../../skills, used by dev + tests).
+function skillSource(): string {
+  const candidates: string[] = [];
+  const entry = process.argv[1];
+  if (entry) candidates.push(join(dirname(entry), "skills", SKILL_NAME, "SKILL.md")); // bundled: dist/skills/...
+  try {
+    const here = fileURLToPath(import.meta.url);
+    candidates.push(join(dirname(here), "..", "..", "skills", SKILL_NAME, "SKILL.md")); // source: repo/skills/...
+  } catch {
+    // import.meta unavailable in some bundles — the entry-relative candidate covers that case.
+  }
+  return candidates.find(existsSync) ?? candidates[candidates.length - 1] ?? "";
+}
 
 function defaultSkillsDir(): string {
   return join(codexHome(), "skills");
@@ -16,7 +31,7 @@ function defaultSkillsDir(): string {
 export function installSkill(skillsDir: string = defaultSkillsDir()): string {
   const dest = join(skillsDir, SKILL_NAME, "SKILL.md");
   mkdirSync(dirname(dest), { recursive: true });
-  copyFileSync(SKILL_SOURCE, dest);
+  copyFileSync(skillSource(), dest);
   return dest;
 }
 
