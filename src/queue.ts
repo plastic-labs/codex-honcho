@@ -17,7 +17,10 @@ export interface QueueEntry {
   at?: string;
 }
 
-function safe(key: string): string {
+// Turn a memory key (which can contain "/", ":", ".", spaces from repo paths,
+// branches, and session ids) into a safe filename stem. The lock file in
+// flush.ts must use this same transform to sit alongside its queue files.
+export function safe(key: string): string {
   return key.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 

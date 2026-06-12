@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 import { loadConfig, sessionName, memoryKey } from "../config.ts";
 import { getSession } from "../memory.ts";
-import { readQueue, sentCount, setSentCount, queueDir, type QueueEntry } from "../queue.ts";
+import { readQueue, sentCount, setSentCount, queueDir, safe, type QueueEntry } from "../queue.ts";
 
 interface FlushInput {
   cwd?: string;
@@ -20,7 +20,7 @@ type PeerMessage = ReturnType<SessionHandles["userPeer"]["message"]>;
 
 // Split an oversized body into <=MAX_CHARS pieces, preferring a newline/space
 // boundary, so a long turn is preserved across parts instead of truncated.
-// Capped at MAX_BATCH parts so one queue entry never exceeds a single upload
+// Capped at BATCH_LIMIT parts so one queue entry never exceeds a single upload
 // call — a >2.4MB single turn (effectively impossible) drops its overflow tail.
 function chunkText(text: string, max = MAX_CHARS): string[] {
   if (text.length <= max) return [text];
@@ -55,12 +55,8 @@ function splitText(text: string, max: number): string[] {
   return chunks;
 }
 
-function safeKey(key: string): string {
-  return key.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
 export function lockPath(key: string): string {
-  return join(queueDir(), `${safeKey(key)}.lock`);
+  return join(queueDir(), `${safe(key)}.lock`);
 }
 
 function messagesForEntry(
