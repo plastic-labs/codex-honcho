@@ -49,22 +49,22 @@ function mcpIdentity(): McpIdentity | null {
   };
 }
 
-// The shell command each Codex hook runs. Prefer the globally-installed
-// `codex-honcho` bin (the npm install path): the PATH shim always points at the
-// current version, so hooks survive `npm update` without re-running install.
-// Fall back to an absolute `bun run` against this file for a local/dev clone
-// that isn't on PATH yet.
+// The shell command each Codex hook runs. When the `codex-honcho` bin is
+// installed (npm), wire hooks to its *resolved absolute path* — PATH-independent
+// (Codex's hook runner may not have the npm global bin dir on PATH) and stable
+// across `npm update` (the global shim path is constant). Fall back to an
+// absolute `bun run` against this file for a local/dev clone not yet installed.
 function hookInvoke(): (verb: string) => string {
-  if (Bun.which("codex-honcho")) return (verb) => `codex-honcho ${verb}`;
+  const bin = Bun.which("codex-honcho");
+  if (bin) return (verb) => `${JSON.stringify(bin)} ${verb}`;
   const self = fileURLToPath(import.meta.url);
   return (verb) => `bun run ${JSON.stringify(self)} ${verb}`;
 }
 
 // Make ~/.honcho/config.json the source of truth. A key already present (root
-// apiKey, hosts.codex, or HONCHO_API_KEY env) is enough to seed the config
-// non-interactively — we just persist it and seed the hosts.codex block, using
-// the existing peer name or a sensible fallback, no prompting. Only a truly
-// empty config (no key anywhere) prompts. Returns false if no key is available
+// apiKey, hosts.codex, or HONCHO_API_KEY env) is enough to persist the config
+// non-interactively — we save the key + peer (existing or a sensible fallback),
+// no prompting. Only a truly empty config (no key anywhere) prompts. Returns false if no key is available
 // and the user skips — the caller then installs hooks/skill but leaves MCP off.
 // Non-interactive runs get null from prompt() and fall through cleanly.
 function ensureHonchoConfig(): boolean {

@@ -113,14 +113,14 @@ export function currentIdentity(): { apiKey?: string; peerName?: string } {
 }
 
 // Persist key/peer into ~/.honcho/config.json, merging into the existing file:
-// root fields and other hosts' blocks are preserved, and a hosts.codex block is
-// seeded with defaults if absent. Returns the path written.
+// existing root fields and every hosts.* block are preserved. We deliberately
+// do NOT seed hosts.codex defaults — writing an explicit workspace would pin it
+// and override a root-level `workspace` the user expects codex to inherit.
+// Returns the path written.
 export function saveConfig(patch: { apiKey?: string; peerName?: string }): string {
   const raw = readFile();
   if (patch.apiKey) raw.apiKey = patch.apiKey;
   if (patch.peerName) raw.peerName = patch.peerName;
-  raw.hosts = raw.hosts ?? {};
-  raw.hosts[HOST] = { workspace: HOST, sessionStrategy: "per-directory", ...(raw.hosts[HOST] ?? {}) };
 
   const path = configPath();
   mkdirSync(dirname(path), { recursive: true });

@@ -36,7 +36,7 @@ Capture never hits the network. `flush` is lock-guarded and advances the sent ma
 Requires [bun](https://bun.sh) on PATH (the hooks run under bun), a Honcho API key (from [app.honcho.dev](https://app.honcho.dev), saved via `honcho init` or `HONCHO_API_KEY`), and `npx` on PATH (for the MCP `mcp-remote` bridge).
 
 ```bash
-npm install -g codex-honcho
+npm install -g @honcho-ai/codex-honcho
 codex-honcho install      # registers hooks + MCP + skill in ~/.codex
 ```
 
