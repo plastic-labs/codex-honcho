@@ -69,7 +69,9 @@ function hookInvoke(): (verb: string) => string {
 // Non-interactive runs get null from prompt() and fall through cleanly.
 function ensureHonchoConfig(): boolean {
   const { apiKey: existingKey, peerName: existingPeer } = currentIdentity();
-  const fallbackPeer = process.env.USER || process.env.USERNAME || "user";
+  // Mirror loadConfig's precedence: env peer name beats the OS user so we don't
+  // persist the wrong peer when HONCHO_PEER_NAME is set but the file has none.
+  const fallbackPeer = process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
 
   if (existingKey) {
     console.log(`Saved Honcho config → ${saveConfig({ apiKey: existingKey, peerName: existingPeer ?? fallbackPeer })}`);
