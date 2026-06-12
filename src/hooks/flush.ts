@@ -2,18 +2,76 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 import { loadConfig, sessionName, memoryKey } from "../config.ts";
 import { getSession } from "../memory.ts";
-import { readQueue, sentCount, setSentCount, queueDir } from "../queue.ts";
+import { readQueue, sentCount, setSentCount, queueDir, safe, type QueueEntry } from "../queue.ts";
 
 interface FlushInput {
   cwd?: string;
   session_id?: string;
 }
 
-const MAX_CHARS = 4000;
-const CHUNK_SIZE = 25;
+// Honcho's per-message content ceiling is ~25k chars; stay just under it.
+const MAX_CHARS = 24000;
+// Honcho rejects an addMessages call with more than 100 messages, and the SDK
+// sends one POST per call without chunking, so we cap each call here.
+const BATCH_LIMIT = 100;
 
-function lockPath(key: string): string {
-  return join(queueDir(), `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}.lock`);
+type SessionHandles = Awaited<ReturnType<typeof getSession>>;
+type PeerMessage = ReturnType<SessionHandles["userPeer"]["message"]>;
+
+// Split an oversized body into <=MAX_CHARS pieces, preferring a newline/space
+// boundary, so a long turn is preserved across parts instead of truncated.
+// Capped at BATCH_LIMIT parts so one queue entry never exceeds a single upload
+// call — a >2.4MB single turn (effectively impossible) drops its overflow tail.
+function chunkText(text: string, max = MAX_CHARS): string[] {
+  if (text.length <= max) return [text];
+  let total = 1;
+  let chunks: string[] = [];
+  for (;;) {
+    const labelBudget = `[part ${total}/${total}] `.length;
+    const payloadMax = Math.max(1, max - labelBudget);
+    chunks = splitText(text, payloadMax);
+    if (chunks.length === total || `[part ${chunks.length}/${chunks.length}] `.length === labelBudget) {
+      total = chunks.length;
+      break;
+    }
+    total = chunks.length;
+  }
+  if (chunks.length > BATCH_LIMIT) chunks = chunks.slice(0, BATCH_LIMIT);
+  total = chunks.length;
+  return chunks.map((c, i) => `[part ${i + 1}/${total}] ${c}`);
+}
+
+function splitText(text: string, max: number): string[] {
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf("\n", max);
+    if (cut < max * 0.25) cut = rest.lastIndexOf(" ", max);
+    if (cut < max * 0.25) cut = max;
+    chunks.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+export function lockPath(key: string): string {
+  return join(queueDir(), `${safe(key)}.lock`);
+}
+
+function messagesForEntry(
+  entry: QueueEntry,
+  userPeer: SessionHandles["userPeer"],
+  aiPeer: SessionHandles["aiPeer"],
+): PeerMessage[] {
+  const peer = entry.role === "user" ? userPeer : aiPeer;
+  const body = entry.role === "tool" ? `[tool] ${entry.text}` : entry.text;
+  return chunkText(body).map((piece) =>
+    peer.message(piece, {
+      createdAt: entry.at,
+      ...(entry.role === "tool" ? { metadata: { type: "tool" } } : {}),
+    }),
+  );
 }
 
 // Single-flusher lock: skip if another flush holds it (dead owners are taken
@@ -61,26 +119,29 @@ export async function flush(input: FlushInput): Promise<string> {
   if (!acquireLock(key)) return "";
   try {
     const all = readQueue(key);
-    let start = sentCount(key);
+    const start = sentCount(key);
     if (all.length - start <= 0) return "";
 
     const { session, userPeer, aiPeer } = await getSession(config, name);
+    let batch: PeerMessage[] = [];
 
-    // Upload in bounded chunks, advancing the sent marker after each so a
-    // failure mid-drain keeps partial progress and retries from the right spot.
-    for (let i = start; i < all.length; i += CHUNK_SIZE) {
-      const chunk = all.slice(i, i + CHUNK_SIZE);
-      const messages = chunk.map((entry) => {
-        const peer = entry.role === "user" ? userPeer : aiPeer;
-        const text = entry.role === "tool" ? `[tool] ${entry.text}` : entry.text;
-        return peer.message(text.slice(0, MAX_CHARS), {
-          createdAt: entry.at,
-          ...(entry.role === "tool" ? { metadata: { type: "tool" } } : {}),
-        });
-      });
-      await session.addMessages(messages);
-      start += chunk.length;
-      setSentCount(key, start);
+    // Drain pending entries in order, flushing only at entry boundaries so the
+    // sent marker always lands on a fully-uploaded entry — a failure mid-drain
+    // just retries from the last completed entry, no sub-entry bookkeeping. The
+    // batch is flushed right before an entry would push it past BATCH_LIMIT, and
+    // once more at the end, so no single call exceeds Honcho's per-request limit.
+    for (let i = start; i < all.length; i++) {
+      const messages = messagesForEntry(all[i], userPeer, aiPeer);
+      if (batch.length > 0 && batch.length + messages.length > BATCH_LIMIT) {
+        await session.addMessages(batch);
+        setSentCount(key, i);
+        batch = [];
+      }
+      batch.push(...messages);
+    }
+    if (batch.length > 0) {
+      await session.addMessages(batch);
+      setSentCount(key, all.length);
     }
   } finally {
     releaseLock(key);
