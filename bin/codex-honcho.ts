@@ -10,7 +10,7 @@ import {
 } from "../src/connectors/codex.ts";
 import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
-import { loadConfig, memoryKey } from "../src/config.ts";
+import { loadConfig, memoryKey, currentIdentity, saveConfig } from "../src/config.ts";
 import { pendingCount } from "../src/queue.ts";
 
 const command = process.argv[2] ?? "";
@@ -49,12 +49,44 @@ function mcpIdentity(): McpIdentity | null {
   };
 }
 
+// The shell command each Codex hook runs. Prefer the globally-installed
+// `codex-honcho` bin (the npm install path): the PATH shim always points at the
+// current version, so hooks survive `npm update` without re-running install.
+// Fall back to an absolute `bun run` against this file for a local/dev clone
+// that isn't on PATH yet.
+function hookInvoke(): (verb: string) => string {
+  if (Bun.which("codex-honcho")) return (verb) => `codex-honcho ${verb}`;
+  const self = fileURLToPath(import.meta.url);
+  return (verb) => `bun run ${JSON.stringify(self)} ${verb}`;
+}
+
+// Make ~/.honcho/config.json the source of truth. A key already present (root
+// apiKey, hosts.codex, or HONCHO_API_KEY env) is enough to seed the config
+// non-interactively — we just persist it and seed the hosts.codex block, using
+// the existing peer name or a sensible fallback, no prompting. Only a truly
+// empty config (no key anywhere) prompts. Returns false if no key is available
+// and the user skips — the caller then installs hooks/skill but leaves MCP off.
+// Non-interactive runs get null from prompt() and fall through cleanly.
+function ensureHonchoConfig(): boolean {
+  const { apiKey: existingKey, peerName: existingPeer } = currentIdentity();
+  const fallbackPeer = process.env.USER || process.env.USERNAME || "user";
+
+  if (existingKey) {
+    console.log(`Saved Honcho config → ${saveConfig({ apiKey: existingKey, peerName: existingPeer ?? fallbackPeer })}`);
+    return true;
+  }
+
+  const apiKey = (prompt("Honcho API key (hch-…, leave blank to skip): ") ?? "").trim();
+  if (!apiKey) return false;
+  const peerName = existingPeer ?? ((prompt(`Honcho peer name [${fallbackPeer}]: `) ?? "").trim() || fallbackPeer);
+  console.log(`Saved Honcho config → ${saveConfig({ apiKey, peerName })}`);
+  return true;
+}
+
 switch (command) {
   case "install": {
-    // Wire hooks to this script's absolute path so the Codex hook runner
-    // doesn't depend on `codex-honcho` being on PATH.
-    const self = fileURLToPath(import.meta.url);
-    installCodexHooks({ invoke: (verb) => `bun run ${JSON.stringify(self)} ${verb}` });
+    ensureHonchoConfig();
+    installCodexHooks({ invoke: hookInvoke() });
     console.log(`Installed Codex hooks → ${DEFAULT_HOOKS_PATH}`);
     console.log(`Enabled [features].hooks → ${DEFAULT_CONFIG_PATH}`);
     console.log(`Installed memory skill → ${installSkill()}`);

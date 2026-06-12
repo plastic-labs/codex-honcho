@@ -1,13 +1,15 @@
 import { homedir } from "node:os";
-import { join, basename } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { join, basename, dirname } from "node:path";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { currentBranch } from "./git.ts";
 
 export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
 
 // codex-honcho shares the ~/.honcho/config.json file with the other Honcho
 // integrations. Codex-specific settings live under hosts.codex; root fields
-// are the fallback. We only ever read this file — the honcho CLI owns writes.
+// are the fallback. At runtime we only read it; `install` is the one writer —
+// it persists the resolved API key + peer name here (merging, never clobbering
+// other integrations' settings) so the shared file is the source of truth.
 
 const HOST = "codex";
 
@@ -98,6 +100,32 @@ export function loadConfig(): Config | null {
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,
   };
+}
+
+// The currently-resolved key + peer, read straight from env/file (no defaults
+// applied). `install` uses this to decide what's missing and must be prompted.
+export function currentIdentity(): { apiKey?: string; peerName?: string } {
+  const raw = readFile();
+  return {
+    apiKey: process.env.HONCHO_API_KEY || raw.hosts?.[HOST]?.apiKey || raw.apiKey,
+    peerName: raw.peerName,
+  };
+}
+
+// Persist key/peer into ~/.honcho/config.json, merging into the existing file:
+// root fields and other hosts' blocks are preserved, and a hosts.codex block is
+// seeded with defaults if absent. Returns the path written.
+export function saveConfig(patch: { apiKey?: string; peerName?: string }): string {
+  const raw = readFile();
+  if (patch.apiKey) raw.apiKey = patch.apiKey;
+  if (patch.peerName) raw.peerName = patch.peerName;
+  raw.hosts = raw.hosts ?? {};
+  raw.hosts[HOST] = { workspace: HOST, sessionStrategy: "per-directory", ...(raw.hosts[HOST] ?? {}) };
+
+  const path = configPath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(raw, null, 2) + "\n");
+  return path;
 }
 
 function baseUrl(config: Config): string {

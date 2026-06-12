@@ -33,23 +33,32 @@ Capture never hits the network. `flush` is lock-guarded and advances the sent ma
 
 ## Install
 
-Requires [bun](https://bun.sh), a Honcho API key (from [app.honcho.dev](https://app.honcho.dev), saved via `honcho init` or `HONCHO_API_KEY`), and `npx` on PATH (for the MCP `mcp-remote` bridge).
+Requires [bun](https://bun.sh) on PATH (the hooks run under bun), a Honcho API key (from [app.honcho.dev](https://app.honcho.dev), saved via `honcho init` or `HONCHO_API_KEY`), and `npx` on PATH (for the MCP `mcp-remote` bridge).
 
 ```bash
-git clone https://github.com/plastic-labs/codex-honcho
-cd codex-honcho
-./install.sh        # bun install + bun run bin/codex-honcho.ts install
+npm install -g codex-honcho
+codex-honcho install      # registers hooks + MCP + skill in ~/.codex
 ```
 
 Restart Codex afterward to load the hooks and `[features].hooks`.
 
-Without a key, install registers the hooks and skill but skips the MCP server (which needs it); save a key and re-run `./install.sh` to complete that step.
+Without a key, install registers the hooks and skill but skips the MCP server (which needs it); save a key and re-run `codex-honcho install` to complete that step.
 
 | command | effect |
 |---|---|
-| `bun run bin/codex-honcho.ts install` | install hooks + MCP + skill |
-| `bun run bin/codex-honcho.ts status` | installed components + pending queue depth |
-| `bun run bin/codex-honcho.ts remove` | strip only what this installs |
+| `codex-honcho install` | install hooks + MCP + skill |
+| `codex-honcho status` | installed components + pending queue depth |
+| `codex-honcho remove` | strip only what this installs |
+
+### From a GitHub clone (no npm)
+
+```bash
+git clone https://github.com/plastic-labs/codex-honcho
+cd codex-honcho
+./install.sh              # bun install + bun run bin/codex-honcho.ts install
+```
+
+The clone path wires the hooks to this directory's absolute path, so keep the clone in place. The npm install wires them to the `codex-honcho` bin on PATH instead, so it survives `npm update`.
 
 ## What install writes
 

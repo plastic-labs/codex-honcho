@@ -29,7 +29,11 @@
   ],
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@honcho-ai/sdk": "^2.1.0",
