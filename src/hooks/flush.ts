@@ -11,10 +11,9 @@ interface FlushInput {
 
 // Honcho's per-message content ceiling is ~25k chars; stay just under it.
 const MAX_CHARS = 24000;
-// Honcho rejects an addMessages call with more than 100 messages. SOFT_BATCH is
-// the flush target; MAX_BATCH is the hard ceiling we never cross in one call.
-const SOFT_BATCH = 50;
-const MAX_BATCH = 100;
+// Honcho rejects an addMessages call with more than 100 messages, and the SDK
+// sends one POST per call without chunking, so we cap each call here.
+const BATCH_LIMIT = 100;
 
 type SessionHandles = Awaited<ReturnType<typeof getSession>>;
 type PeerMessage = ReturnType<SessionHandles["userPeer"]["message"]>;
@@ -37,7 +36,7 @@ function chunkText(text: string, max = MAX_CHARS): string[] {
     }
     total = chunks.length;
   }
-  if (chunks.length > MAX_BATCH) chunks = chunks.slice(0, MAX_BATCH);
+  if (chunks.length > BATCH_LIMIT) chunks = chunks.slice(0, BATCH_LIMIT);
   total = chunks.length;
   return chunks.map((c, i) => `[part ${i + 1}/${total}] ${c}`);
 }
@@ -132,22 +131,17 @@ export async function flush(input: FlushInput): Promise<string> {
 
     // Drain pending entries in order, flushing only at entry boundaries so the
     // sent marker always lands on a fully-uploaded entry — a failure mid-drain
-    // just retries from the last completed entry, no sub-entry bookkeeping.
-    // SOFT_BATCH is the flush target; the pre-flush guard keeps any single call
-    // within Honcho's MAX_BATCH messages-per-request limit.
+    // just retries from the last completed entry, no sub-entry bookkeeping. The
+    // batch is flushed right before an entry would push it past BATCH_LIMIT, and
+    // once more at the end, so no single call exceeds Honcho's per-request limit.
     for (let i = start; i < all.length; i++) {
       const messages = messagesForEntry(all[i], userPeer, aiPeer);
-      if (batch.length > 0 && batch.length + messages.length > MAX_BATCH) {
+      if (batch.length > 0 && batch.length + messages.length > BATCH_LIMIT) {
         await session.addMessages(batch);
         setSentCount(key, i);
         batch = [];
       }
       batch.push(...messages);
-      if (batch.length >= SOFT_BATCH) {
-        await session.addMessages(batch);
-        setSentCount(key, i + 1);
-        batch = [];
-      }
     }
     if (batch.length > 0) {
       await session.addMessages(batch);

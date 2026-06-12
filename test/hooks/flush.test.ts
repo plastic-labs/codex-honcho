@@ -79,35 +79,44 @@ test("nothing pending → no upload", async () => {
   expect(batches).toEqual([]);
 });
 
-test("flushes at the soft batch target on entry boundaries", async () => {
+test("a small queue drains in a single call", async () => {
   enqueue("s1", manyEntries(60));
 
   await runFlush();
 
-  expect(addCalls).toBe(2);
-  expect(batches[0].length).toBe(50);
-  expect(batches[1].length).toBe(10);
+  expect(addCalls).toBe(1);
+  expect(batches[0].length).toBe(60);
   expect(sentCount("s1")).toBe(60);
 });
 
+test("splits a backlog into calls of at most 100 messages, on entry boundaries", async () => {
+  enqueue("s1", manyEntries(150));
+
+  await runFlush();
+
+  expect(addCalls).toBe(2);
+  expect(batches.map((b) => b.length)).toEqual([100, 50]);
+  expect(sentCount("s1")).toBe(150);
+});
+
 test("a mid-drain failure keeps completed entries and resends only the remainder", async () => {
-  enqueue("s1", manyEntries(60));
+  enqueue("s1", manyEntries(150));
   failOnCalls = new Set([2]); // first batch lands, second throws
 
   await expect(runFlush()).rejects.toThrow();
 
   // First batch's marker advanced; the failed batch is still pending.
-  expect(sentCount("s1")).toBe(50);
-  expect(pendingCount("s1")).toBe(10);
+  expect(sentCount("s1")).toBe(100);
+  expect(pendingCount("s1")).toBe(50);
 
-  // Retry: only the remaining 10 go up, no re-send of the first 50.
+  // Retry: only the remaining 50 go up, no re-send of the first 100.
   batches = [];
   await runFlush();
-  expect(batches.flat().length).toBe(10);
+  expect(batches.flat().length).toBe(50);
   expect(batches.flat().map((m) => m.text)).toEqual(
-    Array.from({ length: 10 }, (_, i) => `m${50 + i}`),
+    Array.from({ length: 50 }, (_, i) => `m${100 + i}`),
   );
-  expect(sentCount("s1")).toBe(60);
+  expect(sentCount("s1")).toBe(150);
 });
 
 test("a first-chunk failure leaves the marker at zero so the whole batch retries", async () => {
