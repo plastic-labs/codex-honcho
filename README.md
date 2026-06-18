@@ -83,7 +83,7 @@ Backed by `~/.honcho/config.json` (shared with other Honcho integrations). Codex
 ```json
 {
   "apiKey": "hch-…",
-  "peerName": "eri",
+  "peerName": "testuser",
   "hosts": {
     "codex": {
       "workspace": "codex",

@@ -1,14 +1,14 @@
 import { test, expect } from "bun:test";
 import { setMcpServer, clearMcpServer, hasMcpServer, HONCHO_MCP_URL } from "../../src/connectors/mcp.ts";
 
-const id = { apiKey: "hch-secret", userName: "eri", workspaceId: "codex", assistantName: "codex" };
+const id = { apiKey: "hch-secret", userName: "testuser", workspaceId: "codex", assistantName: "codex" };
 
 test("setMcpServer writes a native HTTP honcho mcp block with creds and headers", () => {
   const out = setMcpServer("", id);
   expect(out).toContain("[mcp_servers.honcho]");
   expect(out).toContain(`url = "${HONCHO_MCP_URL}"`);
   expect(out).toContain('bearer_token = "hch-secret"');
-  expect(out).toContain('"X-Honcho-User-Name" = "eri"');
+  expect(out).toContain('"X-Honcho-User-Name" = "testuser"');
   expect(out).toContain('"X-Honcho-Workspace-ID" = "codex"');
   // Native transport — no mcp-remote/npx bridge.
   expect(out).not.toContain("mcp-remote");
@@ -17,7 +17,7 @@ test("setMcpServer writes a native HTTP honcho mcp block with creds and headers"
 });
 
 test("optional headers are omitted when absent", () => {
-  const out = setMcpServer("", { apiKey: "k", userName: "eri" });
+  const out = setMcpServer("", { apiKey: "k", userName: "testuser" });
   expect(out).not.toContain("X-Honcho-Workspace-ID");
   expect(out).not.toContain("X-Honcho-Assistant-Name");
 });

@@ -23,18 +23,18 @@ afterEach(() => {
 });
 
 test("returns nothing when per-prompt injection is off (default) — no network", async () => {
-  writeConfig({ apiKey: "k", peerName: "eri" });
+  writeConfig({ apiKey: "k", peerName: "testuser" });
   const out = await prompt({ prompt: "how is auth done?", cwd: "/tmp/x", session_id: "s1" });
   expect(out).toBe("");
 });
 
 test("returns nothing for a trivial prompt even when injection is on", async () => {
-  writeConfig({ apiKey: "k", peerName: "eri", hosts: { codex: { injectPerPrompt: true } } });
+  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { injectPerPrompt: true } } });
   expect(await prompt({ prompt: "ok", cwd: "/tmp/x", session_id: "s1" })).toBe("");
 });
 
 test("returns nothing when enabled but there is no cached context (no network)", async () => {
-  writeConfig({ apiKey: "k", peerName: "eri", hosts: { codex: { injectPerPrompt: true } } });
+  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { injectPerPrompt: true } } });
   const out = await prompt({ prompt: "tell me about the project", cwd: "/tmp/x", session_id: "no-cache" });
   expect(out).toBe("");
 });
