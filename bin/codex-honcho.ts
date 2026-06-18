@@ -12,7 +12,7 @@ import {
 } from "../src/connectors/codex.ts";
 import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
-import { loadConfig, memoryKey, currentIdentity, saveConfig } from "../src/config.ts";
+import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName } from "../src/config.ts";
 import { pendingCount } from "../src/queue.ts";
 
 const command = process.argv[2] ?? "";
@@ -96,33 +96,19 @@ function stableEntry(): string {
   return dest;
 }
 
-// Make ~/.honcho/config.json the source of truth. A key already present (root
-// apiKey, hosts.codex, or HONCHO_API_KEY env) is enough to persist the config
-// non-interactively — we save the key + peer (existing or a sensible fallback),
-// no prompting. Only a truly empty config (no key anywhere) prompts. Returns false if no key is available
-// and the user skips — the caller then installs hooks/skill but leaves MCP off.
-// Non-interactive runs get null from prompt() and fall through cleanly.
-function ensureHonchoConfig(): boolean {
-  const { apiKey: existingKey, peerName: existingPeer } = currentIdentity();
-  // Mirror loadConfig's precedence: env peer name beats the OS user so we don't
-  // persist the wrong peer when HONCHO_PEER_NAME is set but the file has none.
-  const fallbackPeer = process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
-
-  if (existingKey) {
-    console.log(`Saved Honcho config → ${saveConfig({ apiKey: existingKey, peerName: existingPeer ?? fallbackPeer })}`);
-    return true;
-  }
-
-  const apiKey = (prompt("Honcho API key (hch-…, leave blank to skip): ") ?? "").trim();
-  if (!apiKey) return false;
-  const peerName = existingPeer ?? ((prompt(`Honcho peer name [${fallbackPeer}]: `) ?? "").trim() || fallbackPeer);
-  console.log(`Saved Honcho config → ${saveConfig({ apiKey, peerName })}`);
-  return true;
+// Persist the resolved key + peer into ~/.honcho/config.json when a key is
+// already present (HONCHO_API_KEY env, hosts.codex, or root apiKey). install
+// never prompts — key entry lives in `honcho init`. No key → save nothing; the
+// caller installs hooks/skill and skips MCP registration.
+function persistHonchoConfig(): void {
+  const { apiKey, peerName } = currentIdentity();
+  if (!apiKey) return;
+  console.log(`Saved Honcho config → ${saveConfig({ apiKey, peerName: resolvePeerName(peerName) })}`);
 }
 
 switch (command) {
   case "install": {
-    ensureHonchoConfig();
+    persistHonchoConfig();
     // Stage the bundle to a stable home BEFORE installing the skill, while
     // process.argv[1] still points at the original (npx) dist with its assets.
     const entry = stableEntry();

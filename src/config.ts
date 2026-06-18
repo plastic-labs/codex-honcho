@@ -69,6 +69,13 @@ function readFile(): FileConfig {
   }
 }
 
+// Resolve the peer name: an explicit file value wins, else env, else OS user.
+// One source of truth shared by loadConfig (read) and install (save) so the
+// precedence can never drift between them.
+export function resolvePeerName(filePeer?: string): string {
+  return filePeer || process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
+}
+
 // Returns null when there's no API key — callers exit quietly in that case.
 export function loadConfig(): Config | null {
   const raw = readFile();
@@ -77,8 +84,7 @@ export function loadConfig(): Config | null {
   const apiKey = process.env.HONCHO_API_KEY || host?.apiKey || raw.apiKey;
   if (!apiKey) return null;
 
-  const peerName =
-    raw.peerName || process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
+  const peerName = resolvePeerName(raw.peerName);
 
   const workspace = raw.globalOverride
     ? raw.workspace ?? HOST
