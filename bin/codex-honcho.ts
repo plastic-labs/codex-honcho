@@ -1,9 +1,11 @@
-import { resolve } from "node:path";
+import { resolve, dirname, join } from "node:path";
+import { copyFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { dispatch, isVerb } from "../src/dispatch.ts";
 import {
   installCodexHooks,
   removeCodexHooks,
   hasCodexHooks,
+  codexHome,
   DEFAULT_HOOKS_PATH,
   DEFAULT_CONFIG_PATH,
 } from "../src/connectors/codex.ts";
@@ -58,14 +60,41 @@ function mcpIdentity(): McpIdentity | null {
   };
 }
 
-// The shell command each Codex hook runs. Wire hooks to this entry's *absolute*
+// The shell command each Codex hook runs. Wire hooks to an entry's *absolute*
 // path (PATH-independent; Codex's hook runner may have a minimal PATH). The
 // bundled build is JS run under `node` (no bun required); a local/dev clone is
 // TypeScript run under `bun`. Detect which by the entry's extension.
-function hookInvoke(): (verb: string) => string {
-  const self = resolve(process.argv[1] ?? "");
+function hookInvoke(entry: string): (verb: string) => string {
+  const self = resolve(entry);
   const runner = self.endsWith(".ts") ? "bun run" : "node";
   return (verb) => `${runner} ${JSON.stringify(self)} ${verb}`;
+}
+
+// Resolve the entry the hooks should point at. A dev/clone `.ts` entry lives in
+// a stable repo checkout, so wire hooks straight to it. The bundled `.mjs`,
+// however, runs from an *ephemeral* location when installed via `npx` (the npm
+// `_npx` cache, which is garbage-collected) or a node_modules that may later be
+// pruned — hooks pinned there silently stop firing once it's gone. Copy the
+// self-contained bundle (+ its skill asset) into a stable home under CODEX_HOME
+// and wire hooks to that copy instead.
+function stableEntry(): string {
+  const self = resolve(process.argv[1] ?? "");
+  if (self.endsWith(".ts")) return self;
+
+  const home = join(codexHome(), "honcho");
+  mkdirSync(home, { recursive: true });
+  const dest = join(home, "codex-honcho.mjs");
+  copyFileSync(self, dest);
+
+  // Ship the skill asset next to the staged bundle so a re-run from the stable
+  // copy can still resolve it (skillSource() looks relative to the running entry).
+  const srcSkill = join(dirname(self), "skills", "honcho-memory", "SKILL.md");
+  if (existsSync(srcSkill)) {
+    const destSkill = join(home, "skills", "honcho-memory", "SKILL.md");
+    mkdirSync(dirname(destSkill), { recursive: true });
+    copyFileSync(srcSkill, destSkill);
+  }
+  return dest;
 }
 
 // Make ~/.honcho/config.json the source of truth. A key already present (root
@@ -95,7 +124,10 @@ function ensureHonchoConfig(): boolean {
 switch (command) {
   case "install": {
     ensureHonchoConfig();
-    installCodexHooks({ invoke: hookInvoke() });
+    // Stage the bundle to a stable home BEFORE installing the skill, while
+    // process.argv[1] still points at the original (npx) dist with its assets.
+    const entry = stableEntry();
+    installCodexHooks({ invoke: hookInvoke(entry) });
     console.log(`Installed Codex hooks → ${DEFAULT_HOOKS_PATH}`);
     console.log(`Enabled [features].hooks → ${DEFAULT_CONFIG_PATH}`);
     console.log(`Installed memory skill → ${installSkill()}`);
@@ -113,7 +145,11 @@ switch (command) {
     const hooksGone = removeCodexHooks();
     const mcpGone = removeMcpServer();
     const skillGone = removeSkill();
-    console.log(hooksGone || mcpGone || skillGone ? "Removed codex-honcho hooks, MCP registration, and skill." : "No codex-honcho install found.");
+    // Drop the staged bundle home (no-op for a dev/clone install, which has none).
+    const stagedHome = join(codexHome(), "honcho");
+    const stagedGone = existsSync(stagedHome);
+    if (stagedGone) rmSync(stagedHome, { recursive: true, force: true });
+    console.log(hooksGone || mcpGone || skillGone || stagedGone ? "Removed codex-honcho hooks, MCP registration, and skill." : "No codex-honcho install found.");
     break;
   }
   case "status": {
