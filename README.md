@@ -1,16 +1,6 @@
 # codex-honcho
 
-Harness-level [Honcho](https://honcho.dev) memory for [OpenAI Codex](https://developers.openai.com/codex). Codex lifecycle hooks capture each session to Honcho and inject relevant context at session start, so memory persists across conversations. Sibling to [`claude-honcho`](https://github.com/plastic-labs/claude-honcho) — same backend, Codex's hook system instead of Claude Code's.
-
-## Design
-
-Three properties of Codex's hook model drive the architecture:
-
-- **Stop is turn-scoped; there is no `SessionEnd`.** Writeback runs every turn and ships only the rollout delta since a per-conversation cursor — not a session-end batch.
-- **Codex ignores `async: true` and kills detached children when a hook returns.** Background uploads don't survive, so capture is local and the upload runs inline at turn end (`Stop` fires after the model responds, so it doesn't block the visible turn).
-- **Hook stdout is injected as model-only context.** Memory is returned as a `hookSpecificOutput.additionalContext` block — fed to the model, not printed to the user.
-
-No daemon, no sidecar DB. Capture writes a local append-only queue; flush drains it to the Honcho API. Active recall goes through Honcho's hosted MCP.
+Harness-level [Honcho](https://honcho.dev) memory for [OpenAI Codex](https://developers.openai.com/codex). Codex lifecycle hooks capture each session to Honcho and inject relevant context at session start, so memory persists across conversations.
 
 ## Hooks
 
@@ -33,7 +23,7 @@ Capture never hits the network. `flush` is lock-guarded and advances the sent ma
 
 ## Install
 
-Requires [Node](https://nodejs.org) on PATH to run the installer, a Honcho API key (from [app.honcho.dev](https://app.honcho.dev), saved via `honcho init` or `HONCHO_API_KEY`), and **[Codex](https://developers.openai.com/codex) ≥ 0.136.0**. The MCP server uses Codex's native streamable-HTTP transport (no `npx`/`mcp-remote` bridge); 0.136.0 is the first build to bundle rmcp 1.7.0, which sends the custom auth/identity headers the Honcho server needs (`X-Honcho-User-Name`) — earlier builds silently drop them.
+Requires [Node](https://nodejs.org) on PATH to run the installer, a Honcho API key (from [app.honcho.dev](https://app.honcho.dev), saved via `honcho init` or `HONCHO_API_KEY`), and **[Codex](https://developers.openai.com/codex) ≥ 0.136.0**.
 
 ```bash
 npm install -g @honcho-ai/codex-honcho
@@ -41,8 +31,6 @@ codex-honcho install      # registers hooks + MCP + skill in ~/.codex
 ```
 
 Restart Codex afterward to load the hooks and `[features].hooks`.
-
-**You don't have to use the `codex` CLI for coding.** The installer writes to the shared `~/.codex/` config that the CLI, the IDE extension (VS Code/Cursor/JetBrains), and the desktop app all read — you only need a terminal with Node to run `install` once. MCP recall is supported on all three surfaces; the lifecycle hooks run in Codex's shared engine, so they apply beyond the CLI too (the IDE extension occasionally needs a restart to pick up new config). Codex Cloud / web runs in remote executors that don't read local `~/.codex/`, so it's out of scope.
 
 If a Honcho key is already saved in `~/.honcho/config.json`, `install` runs without prompting and registers everything — the tools work after a Codex restart, with no environment variable to set. `install` copies that key into `[mcp_servers.honcho].bearer_token`, so if you ever rotate your key, **re-run `codex-honcho install`** to update it.
 
@@ -72,7 +60,7 @@ The clone path runs the TypeScript source directly and so **requires [bun](https
 | `~/.codex/hooks.json` | adds the four hook entries (merged; existing hooks untouched) |
 | `~/.codex/config.toml` | sets `[features].hooks = true`; registers `[mcp_servers.honcho]` → `mcp.honcho.dev` (native HTTP) |
 | `~/.codex/skills/honcho-memory/` | active-recall skill |
-| `~/.honcho/config.json` | persists the resolved `apiKey` + `peerName` at the root (other fields and `hosts.*` blocks preserved); chmod `0600` |
+| `~/.honcho/config.json` | persists the resolved `apiKey` + `peerName` at the root (other fields and `hosts.*` blocks preserved) |
 
 `remove` reverses exactly these.
 
