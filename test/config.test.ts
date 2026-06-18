@@ -85,9 +85,9 @@ test("explicit session override wins", () => {
 test("chat-instance strategy appends a short Codex session id", () => {
   writeConfig({ apiKey: "k", peerName: "eri", hosts: { codex: { sessionStrategy: "chat-instance" } } });
   const cfg = loadConfig()!;
-  expect(sessionName(cfg, "/repo/groudon", "019ea7df-805e-76d1-af52")).toBe("groudon-019ea7df");
+  expect(sessionName(cfg, "/repo/my-app", "019ea7df-805e-76d1-af52")).toBe("my-app-019ea7df");
   // No session id → falls back to the directory.
-  expect(sessionName(cfg, "/repo/groudon")).toBe("groudon");
+  expect(sessionName(cfg, "/repo/my-app")).toBe("my-app");
 });
 
 test("git-branch strategy appends the current branch", () => {
@@ -95,10 +95,10 @@ test("git-branch strategy appends the current branch", () => {
   const cfg = loadConfig()!;
   // Build a fake repo dir with a branch ref.
   const repo = mkdtempSync(join(tmpdir(), "codex-honcho-repo-"));
-  const repoDir = join(repo, "myproj");
+  const repoDir = join(repo, "my-app");
   mkdirSync(join(repoDir, ".git"), { recursive: true });
   writeFileSync(join(repoDir, ".git", "HEAD"), "ref: refs/heads/feature/login\n");
-  expect(sessionName(cfg, repoDir)).toBe("myproj-feature-login");
+  expect(sessionName(cfg, repoDir)).toBe("my-app-feature-login");
 });
 
 test("git-branch falls back to directory outside a repo", () => {
