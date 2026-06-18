@@ -8,20 +8,14 @@ import { codexHome } from "./codex.ts";
 
 const SKILL_NAME = "honcho-memory";
 
-// Locate the source SKILL.md across the layouts we run in: the bundled build
-// (dist/codex-honcho.cjs alongside dist/skills/, copied by build.mjs) and a
-// source checkout (src/connectors/skill.ts → ../../skills, used by dev + tests).
+// Locate the source SKILL.md, anchored on the running module's real path
+// (import.meta.url, NOT process.argv[1] — that's the bin/ symlink under npm). Two
+// layouts: the npm bundle (dist/codex-honcho.mjs → dist/skills/) and a dev checkout
+// (src/connectors/skill.ts → repo/skills/, two levels up).
 function skillSource(): string {
-  const candidates: string[] = [];
-  const entry = process.argv[1];
-  if (entry) candidates.push(join(dirname(entry), "skills", SKILL_NAME, "SKILL.md")); // bundled: dist/skills/...
-  try {
-    const here = fileURLToPath(import.meta.url);
-    candidates.push(join(dirname(here), "..", "..", "skills", SKILL_NAME, "SKILL.md")); // source: repo/skills/...
-  } catch {
-    // import.meta unavailable in some bundles — the entry-relative candidate covers that case.
-  }
-  return candidates.find(existsSync) ?? candidates[candidates.length - 1] ?? "";
+  const here = dirname(fileURLToPath(import.meta.url));
+  const bundled = join(here, "skills", SKILL_NAME, "SKILL.md");
+  return existsSync(bundled) ? bundled : join(here, "..", "..", "skills", SKILL_NAME, "SKILL.md");
 }
 
 function defaultSkillsDir(): string {

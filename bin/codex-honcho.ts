@@ -1,4 +1,5 @@
-import { resolve, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { copyFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { dispatch, isVerb } from "../src/dispatch.ts";
 import {
@@ -65,9 +66,8 @@ function mcpIdentity(): McpIdentity | null {
 // bundled build is JS run under `node` (no bun required); a local/dev clone is
 // TypeScript run under `bun`. Detect which by the entry's extension.
 function hookInvoke(entry: string): (verb: string) => string {
-  const self = resolve(entry);
-  const runner = self.endsWith(".ts") ? "bun run" : "node";
-  return (verb) => `${runner} ${JSON.stringify(self)} ${verb}`;
+  const runner = entry.endsWith(".ts") ? "bun run" : "node";
+  return (verb) => `${runner} ${JSON.stringify(entry)} ${verb}`;
 }
 
 // Resolve the entry the hooks should point at. A dev/clone `.ts` entry lives in
@@ -78,22 +78,21 @@ function hookInvoke(entry: string): (verb: string) => string {
 // self-contained bundle (+ its skill asset) into a stable home under CODEX_HOME
 // and wire hooks to that copy instead.
 function stableEntry(): string {
-  const self = resolve(process.argv[1] ?? "");
-  if (self.endsWith(".ts")) return self;
+  // The running module's real path (import.meta.url, not process.argv[1] — that's
+  // the bin/ symlink under npm, whose dirname isn't where dist assets live).
+  const self = fileURLToPath(import.meta.url);
+  if (self.endsWith(".ts")) return self; // dev/clone: the repo .ts entry is stable
 
   const home = join(codexHome(), "honcho");
   mkdirSync(home, { recursive: true });
   const dest = join(home, "codex-honcho.mjs");
   copyFileSync(self, dest);
 
-  // Ship the skill asset next to the staged bundle so a re-run from the stable
-  // copy can still resolve it (skillSource() looks relative to the running entry).
-  const srcSkill = join(dirname(self), "skills", "honcho-memory", "SKILL.md");
-  if (existsSync(srcSkill)) {
-    const destSkill = join(home, "skills", "honcho-memory", "SKILL.md");
-    mkdirSync(dirname(destSkill), { recursive: true });
-    copyFileSync(srcSkill, destSkill);
-  }
+  // Stage the skill asset (build.mjs ships it at dist/skills/) beside the bundle so
+  // a re-run from the staged copy resolves it via the same import.meta.url anchor.
+  const destSkill = join(home, "skills", "honcho-memory", "SKILL.md");
+  mkdirSync(dirname(destSkill), { recursive: true });
+  copyFileSync(join(dirname(self), "skills", "honcho-memory", "SKILL.md"), destSkill);
   return dest;
 }
 
