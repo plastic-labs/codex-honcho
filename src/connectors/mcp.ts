@@ -2,9 +2,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DEFAULT_CONFIG_PATH } from "./codex.ts";
 
-// Honcho runs a hosted MCP server at https://mcp.honcho.dev. Rather than ship
-// our own, we register it in ~/.codex/config.toml so Codex gets the active
-// recall tools (search/chat/get_context/...). Auth + identity ride in headers.
+// Honcho runs a hosted MCP server at https://mcp.honcho.dev (streamable HTTP,
+// verified at the bare root — /mcp 404s). Rather than ship our own, we register
+// it in ~/.codex/config.toml so Codex gets the active recall tools
+// (search/chat/get_context/...). Auth is an inline bearer token
+// read from ~/.honcho/config.json at install; identity rides as static headers.
 
 export const HONCHO_MCP_URL = "https://mcp.honcho.dev";
 
@@ -20,20 +22,26 @@ export interface McpIdentity {
   assistantName?: string;
 }
 
-function buildBlock(id: McpIdentity): string {
-  const headers = [`Authorization:Bearer ${id.apiKey}`, `X-Honcho-User-Name:${id.userName}`];
-  if (id.workspaceId) headers.push(`X-Honcho-Workspace-ID:${id.workspaceId}`);
-  if (id.assistantName) headers.push(`X-Honcho-Assistant-Name:${id.assistantName}`);
+// TOML basic strings use the same escaping as JSON for our inputs (keys, names,
+// hch- tokens), so JSON.stringify yields a valid quoted TOML value.
+function tomlString(value: string): string {
+  return JSON.stringify(value);
+}
 
-  const args = ["-y", "mcp-remote", HONCHO_MCP_URL];
-  for (const h of headers) args.push("--header", h);
-  const argsToml = args.map((a) => JSON.stringify(a)).join(", ");
+function buildBlock(id: McpIdentity): string {
+  // X-Honcho-User-Name is required; workspace/assistant are optional.
+  const headers = [`"X-Honcho-User-Name" = ${tomlString(id.userName)}`];
+  if (id.workspaceId) headers.push(`"X-Honcho-Workspace-ID" = ${tomlString(id.workspaceId)}`);
+  if (id.assistantName) headers.push(`"X-Honcho-Assistant-Name" = ${tomlString(id.assistantName)}`);
 
   return [
     BLOCK_START,
     "[mcp_servers.honcho]",
-    'command = "npx"',
-    `args = [${argsToml}]`,
+    `url = ${tomlString(HONCHO_MCP_URL)}`,
+    // bearer_token (inline) keeps the zero-env-var install: the key is read from
+    // ~/.honcho/config.json and written here, sent as `Authorization: Bearer …`.
+    `bearer_token = ${tomlString(id.apiKey)}`,
+    `http_headers = { ${headers.join(", ")} }`,
     BLOCK_END,
   ].join("\n");
 }
