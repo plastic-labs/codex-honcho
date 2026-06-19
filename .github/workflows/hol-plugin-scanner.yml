@@ -23,4 +23,4 @@ jobs:
           min_score: 80
           fail_on_severity: high
           format: sarif
-          upload_sarif: true
+          upload_sarif: false
