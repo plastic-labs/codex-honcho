@@ -39,14 +39,23 @@ export function enqueue(key: string, entries: QueueEntry[]): void {
 }
 
 export function readQueue(key: string): QueueEntry[] {
+  let raw: string;
   try {
-    return readFileSync(queuePath(key), "utf-8")
-      .split("\n")
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l) as QueueEntry);
+    raw = readFileSync(queuePath(key), "utf-8");
   } catch {
     return [];
   }
+  const entries: QueueEntry[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line) as QueueEntry);
+    } catch {
+      // Skip a torn line (a write interrupted mid-append) instead of letting one
+      // bad line drop the whole queue from the readback.
+    }
+  }
+  return entries;
 }
 
 export function sentCount(key: string): number {
