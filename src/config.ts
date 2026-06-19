@@ -1,13 +1,15 @@
 import { homedir } from "node:os";
-import { join, basename } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { join, basename, dirname } from "node:path";
+import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { currentBranch } from "./git.ts";
 
 export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
 
 // codex-honcho shares the ~/.honcho/config.json file with the other Honcho
 // integrations. Codex-specific settings live under hosts.codex; root fields
-// are the fallback. We only ever read this file — the honcho CLI owns writes.
+// are the fallback. At runtime we only read it; `install` is the one writer —
+// it persists the resolved API key + peer name here (merging, never clobbering
+// other integrations' settings) so the shared file is the source of truth.
 
 const HOST = "codex";
 
@@ -67,6 +69,13 @@ function readFile(): FileConfig {
   }
 }
 
+// Resolve the peer name: an explicit file value wins, else env, else OS user.
+// One source of truth shared by loadConfig (read) and install (save) so the
+// precedence can never drift between them.
+export function resolvePeerName(filePeer?: string): string {
+  return filePeer || process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
+}
+
 // Returns null when there's no API key — callers exit quietly in that case.
 export function loadConfig(): Config | null {
   const raw = readFile();
@@ -75,8 +84,7 @@ export function loadConfig(): Config | null {
   const apiKey = process.env.HONCHO_API_KEY || host?.apiKey || raw.apiKey;
   if (!apiKey) return null;
 
-  const peerName =
-    raw.peerName || process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
+  const peerName = resolvePeerName(raw.peerName);
 
   const workspace = raw.globalOverride
     ? raw.workspace ?? HOST
@@ -98,6 +106,37 @@ export function loadConfig(): Config | null {
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,
   };
+}
+
+// The currently-resolved key + peer, read straight from env/file (no defaults
+// applied). `install` uses this to decide what's missing and must be prompted.
+export function currentIdentity(): { apiKey?: string; peerName?: string } {
+  const raw = readFile();
+  return {
+    apiKey: process.env.HONCHO_API_KEY || raw.hosts?.[HOST]?.apiKey || raw.apiKey,
+    peerName: raw.peerName,
+  };
+}
+
+// Persist key/peer into ~/.honcho/config.json, merging into the existing file:
+// existing root fields and every hosts.* block are preserved. We deliberately
+// do NOT seed hosts.codex defaults — writing an explicit workspace would pin it
+// and override a root-level `workspace` the user expects codex to inherit.
+// Returns the path written.
+export function saveConfig(patch: { apiKey?: string; peerName?: string }): string {
+  const raw = readFile();
+  if (patch.apiKey) raw.apiKey = patch.apiKey;
+  if (patch.peerName) raw.peerName = patch.peerName;
+
+  // The file holds the API key, so keep it user-only. mode on mkdir/write only
+  // applies when they create the target; chmod then enforces 0600 even if the
+  // file already existed with looser perms. (We don't re-chmod the shared
+  // ~/.honcho dir — the honcho CLI owns it and intentionally creates it 0755.)
+  const path = configPath();
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(path, JSON.stringify(raw, null, 2) + "\n", { mode: 0o600 });
+  chmodSync(path, 0o600);
+  return path;
 }
 
 function baseUrl(config: Config): string {
