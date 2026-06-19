@@ -1,4 +1,4 @@
-import { loadConfig, sessionName, memoryKey } from "../config.ts";
+import { loadConfig, sessionName, memoryKey, honchoSessionUrl } from "../config.ts";
 import { createSession, renderContext } from "../memory.ts";
 import { readContext, writeContext, isStale, markInjected } from "../cache.ts";
 
@@ -38,5 +38,13 @@ export async function recall(input: RecallInput): Promise<string> {
 
   const block = renderContext(ctx, config.peerName, 5);
   if (block) markInjected(key, block);
-  return block ? `${block}\n${TOOL_HINT}` : TOOL_HINT;
+
+  // Codex surfaces SessionStart hook output to the user, so we append a deep
+  // link to this session in the Honcho GUI (parity with the Claude Code
+  // integration). We have the live session_id here, so the link is exact for
+  // every strategy — including chat-instance.
+  const link = `View this session in Honcho: ${honchoSessionUrl(config.workspace, name)}`;
+
+  const parts = [block, TOOL_HINT, link].filter(Boolean);
+  return parts.join("\n");
 }

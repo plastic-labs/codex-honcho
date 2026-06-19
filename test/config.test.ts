@@ -2,7 +2,7 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, sessionName } from "../src/config.ts";
+import { loadConfig, sessionName, honchoSessionUrl } from "../src/config.ts";
 
 let dir = "";
 const savedDir = process.env.HONCHO_CONFIG_DIR;
@@ -106,4 +106,14 @@ test("git-branch falls back to directory outside a repo", () => {
   const cfg = loadConfig()!;
   const plain = mkdtempSync(join(tmpdir(), "codex-honcho-plain-"));
   expect(sessionName(cfg, plain)).toBe(basename(plain).toLowerCase().replace(/[^a-z0-9-_]/g, "-"));
+});
+
+test("honchoSessionUrl builds a GUI deep link and encodes its parts", () => {
+  expect(honchoSessionUrl("codex", "my-app")).toBe(
+    "https://app.honcho.dev/explore?workspace=codex&view=sessions&session=my-app",
+  );
+  // chat-instance fallback: empty session, then strip the trailing param.
+  expect(honchoSessionUrl("co dex", "").replace(/&session=$/, "")).toBe(
+    "https://app.honcho.dev/explore?workspace=co%20dex&view=sessions",
+  );
 });
