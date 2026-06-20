@@ -1,0 +1,9 @@
+# HOL Plugin Scanner configuration.
+# https://github.com/hashgraph-online/hol-guard
+
+[scanner]
+# Unit tests use placeholder Honcho keys as fixtures — they are not real
+# credentials and are never shipped (test/ is excluded from the plugin bundle
+# and listed in .codexignore). Scope findings to the shipped plugin so the
+# secret scan does not flag fixture values.
+ignore_paths = ["test/*", "*/test/*"]

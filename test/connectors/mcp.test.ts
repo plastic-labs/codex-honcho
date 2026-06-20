@@ -7,7 +7,10 @@ test("setMcpServer writes a native HTTP honcho mcp block with creds and headers"
   const out = setMcpServer("", id);
   expect(out).toContain("[mcp_servers.honcho]");
   expect(out).toContain(`url = "${HONCHO_MCP_URL}"`);
-  expect(out).toContain('bearer_token = "hch-secret"');
+  // Codex rejects a top-level bearer_token for streamable_http — the key rides
+  // as an inline Authorization header inside http_headers instead.
+  expect(out).toContain('"Authorization" = "Bearer hch-secret"');
+  expect(out).not.toContain("bearer_token");
   expect(out).toContain('"X-Honcho-User-Name" = "testuser"');
   expect(out).toContain('"X-Honcho-Workspace-ID" = "codex"');
   // Native transport — no mcp-remote/npx bridge.

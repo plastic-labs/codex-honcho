@@ -14,9 +14,10 @@ bun install --silent
 
 if [ ! -f "$HOME/.honcho/config.json" ] && [ -z "${HONCHO_API_KEY:-}" ]; then
   echo
-  echo "No Honcho API key found. Get one from https://app.honcho.dev, then save it:"
-  echo "  uv tool install honcho-cli && honcho init    # saves it to ~/.honcho/config.json"
-  echo "  # or: export HONCHO_API_KEY=hch-..."
+  echo "No Honcho API key found. Get one from https://app.honcho.dev, then put it in ~/.honcho/config.json:"
+  echo "  honcho init                                       # writes ~/.honcho/config.json"
+  echo "  # no CLI yet?  uv tool install honcho-cli && honcho init"
+  echo "  # or by hand: echo '{\"apiKey\":\"hch-...\"}' > ~/.honcho/config.json"
   echo "Then re-run ./install.sh to register the MCP server."
 fi
 

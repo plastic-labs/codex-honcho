@@ -5,8 +5,8 @@ import { DEFAULT_CONFIG_PATH } from "./codex.ts";
 // Honcho runs a hosted MCP server at https://mcp.honcho.dev (streamable HTTP,
 // verified at the bare root — /mcp 404s). Rather than ship our own, we register
 // it in ~/.codex/config.toml so Codex gets the active recall tools
-// (search/chat/get_context/...). Auth is an inline bearer token
-// read from ~/.honcho/config.json at install; identity rides as static headers.
+// (search/chat/get_context/...). Auth + identity ride as static http_headers
+// read from ~/.honcho/config.json at install (Authorization + X-Honcho-*).
 
 export const HONCHO_MCP_URL = "https://mcp.honcho.dev";
 
@@ -29,8 +29,15 @@ function tomlString(value: string): string {
 }
 
 function buildBlock(id: McpIdentity): string {
+  // Auth + identity all ride as static http_headers. Codex rejects a top-level
+  // `bearer_token` for streamable_http servers ("not supported"), so we send the
+  // key as an inline `Authorization: Bearer …` header instead — same wire result,
+  // and it keeps the zero-env-var install (key read from ~/.honcho/config.json).
   // X-Honcho-User-Name is required; workspace/assistant are optional.
-  const headers = [`"X-Honcho-User-Name" = ${tomlString(id.userName)}`];
+  const headers = [
+    `"Authorization" = ${tomlString(`Bearer ${id.apiKey}`)}`,
+    `"X-Honcho-User-Name" = ${tomlString(id.userName)}`,
+  ];
   if (id.workspaceId) headers.push(`"X-Honcho-Workspace-ID" = ${tomlString(id.workspaceId)}`);
   if (id.assistantName) headers.push(`"X-Honcho-Assistant-Name" = ${tomlString(id.assistantName)}`);
 
@@ -38,9 +45,6 @@ function buildBlock(id: McpIdentity): string {
     BLOCK_START,
     "[mcp_servers.honcho]",
     `url = ${tomlString(HONCHO_MCP_URL)}`,
-    // bearer_token (inline) keeps the zero-env-var install: the key is read from
-    // ~/.honcho/config.json and written here, sent as `Authorization: Bearer …`.
-    `bearer_token = ${tomlString(id.apiKey)}`,
     `http_headers = { ${headers.join(", ")} }`,
     BLOCK_END,
   ].join("\n");

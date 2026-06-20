@@ -1,7 +1,7 @@
 // Bundle the CLI + hooks into a single self-contained Node script so the hooks
 // run under `node` (no bun, no node_modules at the user's site). The Honcho SDK
-// is bundled in; the only runtime requirements become `node` (+ `npx` for the
-// MCP bridge). Run via `npm run build`.
+// is bundled in; the only runtime requirement becomes `node` (the MCP server is
+// registered as a native HTTP endpoint — no `npx`/mcp-remote bridge). Run via `npm run build`.
 import * as esbuild from "esbuild";
 import { rmSync, mkdirSync, copyFileSync } from "node:fs";
 

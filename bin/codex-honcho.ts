@@ -12,7 +12,7 @@ import {
 } from "../src/connectors/codex.ts";
 import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
-import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName } from "../src/config.ts";
+import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName, sessionName, honchoSessionUrl } from "../src/config.ts";
 import { pendingCount } from "../src/queue.ts";
 
 const command = process.argv[2] ?? "";
@@ -145,6 +145,14 @@ switch (command) {
     if (cfg) {
       const key = memoryKey(cfg, process.cwd());
       console.log(`queue (${key}): ${pendingCount(key)} pending upload`);
+      // Deep link to inspect what actually landed server-side. We have no live
+      // Codex session id here, so chat-instance can't resolve to one session —
+      // link to the session for the other strategies, else the workspace view.
+      const link =
+        cfg.sessionStrategy === "chat-instance"
+          ? honchoSessionUrl(cfg.workspace, "").replace(/&session=$/, "")
+          : honchoSessionUrl(cfg.workspace, sessionName(cfg, process.cwd()));
+      console.log(`view in Honcho: ${link}`);
     }
     break;
   }

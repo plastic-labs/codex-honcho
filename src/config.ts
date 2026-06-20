@@ -189,3 +189,10 @@ export function sessionName(config: Config, cwd: string, sessionId?: string): st
 export function memoryKey(config: Config, cwd: string, sessionId?: string): string {
   return sessionId || sessionName(config, cwd, sessionId);
 }
+
+// Deep link into the Honcho GUI for a given session. The web app lives at the
+// production host regardless of the API endpoint, so we hardcode it (matching
+// the other Honcho integrations).
+export function honchoSessionUrl(workspace: string, session: string): string {
+  return `https://app.honcho.dev/explore?workspace=${encodeURIComponent(workspace)}&view=sessions&session=${encodeURIComponent(session)}`;
+}

@@ -1,6 +1,7 @@
 ---
 name: honcho-memory
 description: Persistent cross-session memory via Honcho — recall what you know about the user before working, and save durable insights after.
+license: MIT
 ---
 
 # Honcho memory
