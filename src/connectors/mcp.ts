@@ -51,13 +51,31 @@ function buildBlock(id: McpIdentity): string {
 }
 
 function stripBlock(content: string): string {
-  const start = content.indexOf(BLOCK_START);
-  if (start === -1) return content;
-  const end = content.indexOf(BLOCK_END, start);
-  if (end === -1) return content;
-  const before = content.slice(0, start).replace(/\n*$/, "");
-  const after = content.slice(end + BLOCK_END.length).replace(/^\n*/, "");
-  return [before, after].filter(Boolean).join("\n\n") + (after ? "" : "\n");
+  if (!content.includes(BLOCK_START)) return content;
+
+  // Codex rewrites config.toml and parks tables it owns (e.g. [hooks.state] or
+  // tool-approval prefs) inside our fence. Drop only the marker lines and the
+  // tables we wrote ([mcp_servers.honcho] + its subtables); keep everything else
+  // so an uninstall/reinstall never deletes config we don't own.
+  const out: string[] = [];
+  let inFence = false;
+  let dropTable = false;
+
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === BLOCK_START) { inFence = true; dropTable = false; continue; }
+    if (trimmed === BLOCK_END) { inFence = false; dropTable = false; continue; }
+    if (!inFence) { out.push(line); continue; }
+
+    const header = trimmed.match(/^\[+\s*([^\]]+?)\s*\]+$/);
+    if (header) {
+      const name = header[1];
+      dropTable = name === "mcp_servers.honcho" || name.startsWith("mcp_servers.honcho.");
+    }
+    if (!dropTable) out.push(line);
+  }
+
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "") + "\n";
 }
 
 // Replace any existing block with a fresh one; idempotent.
