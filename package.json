@@ -24,6 +24,7 @@
     "bin",
     "src",
     "skills",
+    "examples",
     "install.sh",
     "README.md",
     "CHANGELOG.md",

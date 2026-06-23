@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add an optional dry-run-first Codex memory bootstrap workflow under `examples/`.
+- Document how to review, preflight, and explicitly approve legacy memory imports into Honcho.
+
 ## 0.1.0
 
 - Initial release — harness-level Honcho memory for OpenAI Codex.
