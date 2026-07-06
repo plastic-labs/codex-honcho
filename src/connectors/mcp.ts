@@ -57,25 +57,41 @@ function stripBlock(content: string): string {
   // tool-approval prefs) inside our fence. Drop only the marker lines and the
   // tables we wrote ([mcp_servers.honcho] + its subtables); keep everything else
   // so an uninstall/reinstall never deletes config we don't own.
-  const out: string[] = [];
+  //
+  // Preserved lines accumulate into chunks; every removed line (a fence marker
+  // or a honcho-table line) cuts a chunk boundary. We normalize blank lines only
+  // at those seams and leave each preserved chunk byte-for-byte intact — never
+  // touching blank lines a user (or a multiline TOML string) put in unrelated
+  // config.
+  const chunks: string[] = [];
+  let current: string[] = [];
   let inFence = false;
   let dropTable = false;
 
+  const cut = () => {
+    if (current.length) { chunks.push(current.join("\n")); current = []; }
+  };
+
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
-    if (trimmed === BLOCK_START) { inFence = true; dropTable = false; continue; }
-    if (trimmed === BLOCK_END) { inFence = false; dropTable = false; continue; }
-    if (!inFence) { out.push(line); continue; }
-
-    const header = trimmed.match(/^\[+\s*([^\]]+?)\s*\]+$/);
-    if (header) {
-      const name = header[1];
-      dropTable = name === "mcp_servers.honcho" || name.startsWith("mcp_servers.honcho.");
+    if (trimmed === BLOCK_START) { inFence = true; dropTable = false; cut(); continue; }
+    if (trimmed === BLOCK_END) { inFence = false; dropTable = false; cut(); continue; }
+    if (inFence) {
+      const header = trimmed.match(/^\[+\s*([^\]]+?)\s*\]+$/);
+      if (header) {
+        const name = header[1];
+        dropTable = name === "mcp_servers.honcho" || name.startsWith("mcp_servers.honcho.");
+      }
+      if (dropTable) { cut(); continue; }
     }
-    if (!dropTable) out.push(line);
+    current.push(line);
   }
+  cut();
 
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "") + "\n";
+  const parts = chunks
+    .map((c) => c.replace(/^\n+/, "").replace(/\n+$/, ""))
+    .filter(Boolean);
+  return parts.length ? `${parts.join("\n\n")}\n` : "";
 }
 
 // Replace any existing block with a fresh one; idempotent.
