@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG_PATH } from "./codex.ts";
 // Honcho runs a hosted MCP server at https://mcp.honcho.dev (streamable HTTP,
 // verified at the bare root — /mcp 404s). Rather than ship our own, we register
 // it in ~/.codex/config.toml so Codex gets the active recall tools
-// (search/chat/get_context/...). Auth + identity ride as static http_headers
+// (search/chat/get_peer_context/...). Auth + identity ride as static http_headers
 // read from ~/.honcho/config.json at install (Authorization + X-Honcho-*).
 
 export const HONCHO_MCP_URL = "https://mcp.honcho.dev";
