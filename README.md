@@ -79,6 +79,26 @@ Use the Honcho MCP tools (`search`, `chat`) to recall more mid-task, and
 `create_conclusions` to save new preferences, decisions, and patterns as you learn them.
 ```
 
+### Step 6: (Optional) Bootstrap existing Codex memory
+
+If you already have a local Codex memory corpus in `~/.codex/memories`, you can
+seed Honcho with a curated, dry-run-first import. This is separate from
+`codex-honcho install` because legacy memory can contain stale facts, old live
+verification claims, or low-signal routing notes that should be reviewed before
+upload.
+
+The recommended workflow is to scan `memory_summary.md` and `MEMORY.md`, stage
+reviewable conclusions, preflight exact duplicates, then upload only after
+explicit approval. A useful first import is usually `high-medium`: durable
+preferences, repo conventions, machine gotchas, and failure/fix patterns. Keep
+low-priority topic routes out of the first import unless you intentionally want
+Honcho to act as a broad memory router.
+
+Honcho conclusion timestamps are creation-time only, so the bootstrap preserves
+chronology by appending an inferred source-memory date to each uploaded
+conclusion. See [`examples/bootstrap-codex-memory/`](./examples/bootstrap-codex-memory/)
+for the full workflow and safety notes.
+
 ## MCP Tools
 
 Once installed, Codex can call these Honcho tools directly:
