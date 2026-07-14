@@ -14,13 +14,13 @@ const TRIVIAL = /^(y|n|yes|no|ok|okay|sure|thanks|yep|nope|continue|go ahead|do 
 // cover recall without taxing every turn. When injectPerPrompt is enabled,
 // serve the cached snapshot (no network) and never repeat the same block.
 export async function prompt(input: PromptInput): Promise<string> {
-  const config = loadConfig();
+  const cwd = input.cwd || process.cwd();
+  const config = loadConfig(cwd);
   if (!config || !config.enabled || !config.injectPerPrompt) return "";
 
   const text = (input.prompt ?? "").trim();
   if (!text || TRIVIAL.test(text)) return "";
 
-  const cwd = input.cwd || process.cwd();
   const key = memoryKey(config, cwd, input.session_id);
 
   const cached = readContext(key);
