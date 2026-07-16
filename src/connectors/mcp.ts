@@ -77,7 +77,7 @@ function stripBlock(content: string): string {
     if (trimmed === BLOCK_START) { inFence = true; dropTable = false; cut(); continue; }
     if (trimmed === BLOCK_END) { inFence = false; dropTable = false; cut(); continue; }
     if (inFence) {
-      const header = trimmed.match(/^\[+\s*([^\]]+?)\s*\]+$/);
+      const header = trimmed.match(/^\[+\s*([^\]]+?)\s*\]+\s*(#.*)?$/);
       if (header) {
         const name = header[1];
         dropTable = name === "mcp_servers.honcho" || name.startsWith("mcp_servers.honcho.");
