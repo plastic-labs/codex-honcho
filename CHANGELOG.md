@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Fixed uninstall/reinstall wiping foreign config parked inside the honcho comment fence: cleanup now removes only the marker lines and `[mcp_servers.honcho]` tables, preserving anything else Codex left there (e.g. `[hooks.state]`, tool-approval prefs).
+- Updated MCP tool names in the docs and plugin descriptions to match the server (`get_peer_context`, `create_conclusions`).
+
 ## 0.1.0
 
 - Initial release — harness-level Honcho memory for OpenAI Codex.
