@@ -51,13 +51,47 @@ function buildBlock(id: McpIdentity): string {
 }
 
 function stripBlock(content: string): string {
-  const start = content.indexOf(BLOCK_START);
-  if (start === -1) return content;
-  const end = content.indexOf(BLOCK_END, start);
-  if (end === -1) return content;
-  const before = content.slice(0, start).replace(/\n*$/, "");
-  const after = content.slice(end + BLOCK_END.length).replace(/^\n*/, "");
-  return [before, after].filter(Boolean).join("\n\n") + (after ? "" : "\n");
+  if (!content.includes(BLOCK_START)) return content;
+
+  // Codex rewrites config.toml and parks tables it owns (e.g. [hooks.state] or
+  // tool-approval prefs) inside our fence. Drop only the marker lines and the
+  // tables we wrote ([mcp_servers.honcho] + its subtables); keep everything else
+  // so an uninstall/reinstall never deletes config we don't own.
+  //
+  // Preserved lines accumulate into chunks; every removed line (a fence marker
+  // or a honcho-table line) cuts a chunk boundary. We normalize blank lines only
+  // at those seams and leave each preserved chunk byte-for-byte intact — never
+  // touching blank lines a user (or a multiline TOML string) put in unrelated
+  // config.
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let inFence = false;
+  let dropTable = false;
+
+  const cut = () => {
+    if (current.length) { chunks.push(current.join("\n")); current = []; }
+  };
+
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === BLOCK_START) { inFence = true; dropTable = false; cut(); continue; }
+    if (trimmed === BLOCK_END) { inFence = false; dropTable = false; cut(); continue; }
+    if (inFence) {
+      const header = trimmed.match(/^\[+\s*([^\]]+?)\s*\]+\s*(#.*)?$/);
+      if (header) {
+        const name = header[1];
+        dropTable = name === "mcp_servers.honcho" || name.startsWith("mcp_servers.honcho.");
+      }
+      if (dropTable) { cut(); continue; }
+    }
+    current.push(line);
+  }
+  cut();
+
+  const parts = chunks
+    .map((c) => c.replace(/^\n+/, "").replace(/\n+$/, ""))
+    .filter(Boolean);
+  return parts.length ? `${parts.join("\n\n")}\n` : "";
 }
 
 // Replace any existing block with a fresh one; idempotent.
