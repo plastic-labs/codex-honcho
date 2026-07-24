@@ -10,10 +10,11 @@ import {
   DEFAULT_HOOKS_PATH,
   DEFAULT_CONFIG_PATH,
 } from "../src/connectors/codex.ts";
-import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
+import { installMcpServer, removeMcpServer, type McpCommand } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
 import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName, sessionName, honchoSessionUrl } from "../src/config.ts";
 import { pendingCount } from "../src/queue.ts";
+import { runMcpServer } from "../src/mcp.ts";
 
 const command = process.argv[2] ?? "";
 
@@ -50,17 +51,6 @@ async function runHook(verb: string): Promise<void> {
   }
 }
 
-function mcpIdentity(): McpIdentity | null {
-  const config = loadConfig();
-  if (!config) return null;
-  return {
-    apiKey: config.apiKey,
-    userName: config.peerName,
-    workspaceId: config.workspace,
-    assistantName: config.aiPeer,
-  };
-}
-
 // The shell command each Codex hook runs. Wire hooks to an entry's *absolute*
 // path (PATH-independent; Codex's hook runner may have a minimal PATH). The
 // bundled build is JS run under `node` (no bun required); a local/dev clone is
@@ -68,6 +58,12 @@ function mcpIdentity(): McpIdentity | null {
 function hookInvoke(entry: string): (verb: string) => string {
   const runner = entry.endsWith(".ts") ? "bun run" : "node";
   return (verb) => `${runner} ${JSON.stringify(entry)} ${verb}`;
+}
+
+function mcpInvoke(entry: string): McpCommand {
+  return entry.endsWith(".ts")
+    ? { command: "bun", args: ["run", entry, "mcp"] }
+    : { command: "node", args: [entry, "mcp"] };
 }
 
 // Resolve the entry the hooks should point at. A dev/clone `.ts` entry lives in
@@ -116,10 +112,9 @@ switch (command) {
     console.log(`Installed Codex hooks → ${DEFAULT_HOOKS_PATH}`);
     console.log(`Enabled [features].hooks → ${DEFAULT_CONFIG_PATH}`);
     console.log(`Installed memory skill → ${installSkill()}`);
-    const id = mcpIdentity();
-    if (id) {
-      installMcpServer(id);
-      console.log(`Registered Honcho MCP (mcp.honcho.dev) → ${DEFAULT_CONFIG_PATH}`);
+    if (loadConfig(process.cwd())) {
+      installMcpServer(mcpInvoke(entry));
+      console.log(`Registered Honcho MCP server → ${DEFAULT_CONFIG_PATH}`);
     } else {
       console.log("Skipped MCP registration — no Honcho API key found. Run `honcho init`, then re-run install.");
     }
@@ -140,9 +135,10 @@ switch (command) {
   case "status": {
     console.log(hasCodexHooks() ? "codex-honcho hooks: installed" : "codex-honcho hooks: not installed");
     console.log(hasSkill() ? "memory skill: installed" : "memory skill: not installed");
-    const cfg = loadConfig();
+    const cfg = loadConfig(process.cwd());
     console.log(cfg ? "honcho config: found" : "honcho config: missing (run `honcho init`)");
     if (cfg) {
+      if (cfg.localConfig) console.log(`repo-local config: ${cfg.localConfig.path}`);
       const key = memoryKey(cfg, process.cwd());
       console.log(`queue (${key}): ${pendingCount(key)} pending upload`);
       // Deep link to inspect what actually landed server-side. We have no live
@@ -156,8 +152,11 @@ switch (command) {
     }
     break;
   }
+  case "mcp":
+    await runMcpServer(process.cwd());
+    break;
   default:
     await runHook(command);
 }
 
-process.exit(0);
+if (command !== "mcp") process.exit(0);

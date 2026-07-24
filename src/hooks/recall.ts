@@ -19,10 +19,10 @@ const TOOL_HINT =
 // SessionStart: materialize the session and surface a lean snapshot of what we
 // know, plus a nudge to use the MCP tools for anything deeper.
 export async function recall(input: RecallInput): Promise<string> {
-  const config = loadConfig();
+  const cwd = input.cwd || process.cwd();
+  const config = loadConfig(cwd);
   if (!config || !config.enabled) return "";
 
-  const cwd = input.cwd || process.cwd();
   const name = sessionName(config, cwd, input.session_id);
   const key = memoryKey(config, cwd, input.session_id);
 
