@@ -152,7 +152,7 @@ export async function runMcpServer(cwd: string = process.cwd()): Promise<void> {
 
   const honcho = new Honcho(honchoClientOptions(config));
   const server = new Server(
-    { name: "codex-honcho", version: "0.1.0" },
+    { name: "codex-honcho", version: "0.1.1" },
     {
       capabilities: { tools: {} },
       instructions: "Use these tools to recall and maintain Honcho memory. Prefer read-only lookup tools before creating or deleting conclusions.",

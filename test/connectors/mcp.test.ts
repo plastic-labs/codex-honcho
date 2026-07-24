@@ -45,6 +45,21 @@ test("clearMcpServer removes only our block", () => {
   expect(cleared).toContain('model = "o3"');
 });
 
+test("preserves foreign Codex tables parked inside the managed fence", () => {
+  const withBlock = setMcpServer('model = "o3"\n', invoke);
+  const parked = withBlock.replace(
+    "# <<< codex-honcho (honcho mcp) <<<",
+    '[hooks.state]\nenabled = true\n\n# <<< codex-honcho (honcho mcp) <<<',
+  );
+
+  const cleared = clearMcpServer(parked);
+  expect(cleared).toContain('model = "o3"');
+  expect(cleared).toContain("[hooks.state]");
+  expect(cleared).toContain("enabled = true");
+  expect(cleared).not.toContain("[mcp_servers.honcho]");
+  expect(cleared).not.toContain("/opt/codex-honcho.mjs");
+});
+
 test("clear on a file without our block is a harmless passthrough", () => {
   const base = "model = \"o3\"\n";
   expect(hasMcpServer(clearMcpServer(base))).toBe(false);
