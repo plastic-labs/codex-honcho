@@ -1,4 +1,10 @@
-import { readFileSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+} from "node:fs";
 import { createHash } from "node:crypto";
 
 // Codex writes each session to a "rollout" JSONL file under
@@ -167,6 +173,80 @@ function* events(path: string): Generator<RolloutEvent> {
       // Skip malformed lines rather than failing the whole read.
     }
   }
+}
+
+// Read complete JSONL records from the tail without materializing the whole
+// growing rollout. A record may span chunks (including split UTF-8 bytes), so
+// decode only after its complete byte range has been assembled.
+function* reverseLines(path: string): Generator<string> {
+  let file: number;
+  try {
+    file = openSync(path, "r");
+  } catch {
+    return;
+  }
+
+  const chunkSize = 64 * 1024;
+  let remainder = Buffer.alloc(0);
+  try {
+    let position = fstatSync(file).size;
+    while (position > 0) {
+      const length = Math.min(chunkSize, position);
+      position -= length;
+      const chunk = Buffer.allocUnsafe(length);
+      let bytesRead = 0;
+      while (bytesRead < length) {
+        const count = readSync(
+          file,
+          chunk,
+          bytesRead,
+          length - bytesRead,
+          position + bytesRead,
+        );
+        if (count === 0) break;
+        bytesRead += count;
+      }
+      const combined = Buffer.concat([chunk.subarray(0, bytesRead), remainder]);
+      let end = combined.length;
+      for (let index = combined.length - 1; index >= 0; index -= 1) {
+        if (combined[index] !== 0x0a) continue;
+        const line = combined.subarray(index + 1, end).toString("utf-8").trim();
+        if (line) yield line;
+        end = index;
+      }
+      remainder = Buffer.from(combined.subarray(0, end));
+    }
+    const first = remainder.toString("utf-8").trim();
+    if (first) yield first;
+  } finally {
+    closeSync(file);
+  }
+}
+
+// Tool events carry no author/channel fields. Find the most recent user
+// boundary from the authoritative event_msg stream and stop there: if it is
+// not a valid authenticated Dione message, the tool observation has no scope.
+export function readLatestDioneSource(path: string): DioneSource | undefined {
+  for (const line of reverseLines(path)) {
+    let event: RolloutEvent;
+    try {
+      event = JSON.parse(line) as RolloutEvent;
+    } catch {
+      continue;
+    }
+    if (event.type !== "event_msg" || event.payload?.type !== "user_message") continue;
+
+    const payload = event.payload;
+    const text = typeof payload.message === "string" ? payload.message.trim() : "";
+    if (!text || isInjectedSystemTurn(text)) return undefined;
+    if (!payload.client_id || !/^dione-\d+$/.test(payload.client_id)) return undefined;
+
+    const dione = parseDioneTurn(text);
+    return dione && dione !== "ignored" && dione !== "malformed" && dione.text
+      ? dione.source
+      : undefined;
+  }
+  return undefined;
 }
 
 // Read the stable user/assistant record stream. Boundary-only user records are

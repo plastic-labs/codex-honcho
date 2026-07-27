@@ -1,6 +1,6 @@
 import { loadConfig, memoryKey } from "../config.ts";
 import { enqueue } from "../queue.ts";
-import { readRolloutRecords } from "../transcript/codex.ts";
+import { readLatestDioneSource } from "../transcript/codex.ts";
 
 interface ObserveInput {
   tool_name?: string;
@@ -73,15 +73,8 @@ export async function observe(input: ObserveInput): Promise<string> {
   // and omit the observation rather than leak channel activity into the base
   // direct-user session.
   if (!input.transcript_path) return "";
-  const turns = readRolloutRecords(input.transcript_path);
-  let lastUser = turns[turns.length - 1];
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    if (turns[index].role === "user") {
-      lastUser = turns[index];
-      break;
-    }
-  }
-  if (!lastUser?.source || lastUser.persist === false) return "";
+  const source = readLatestDioneSource(input.transcript_path);
+  if (!source) return "";
 
   const cwd = input.cwd || process.cwd();
   const toolId = input.tool_call_id || input.tool_use_id;
@@ -89,7 +82,7 @@ export async function observe(input: ObserveInput): Promise<string> {
     role: "tool",
     text: summary,
     at: new Date().toISOString(),
-    scopeId: lastUser.source.channelId,
+    scopeId: source.channelId,
     ...(toolId ? { receiptId: `codex:tool:${input.session_id || "session"}:${toolId}` } : {}),
   }]);
   return "";

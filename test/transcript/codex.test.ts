@@ -3,7 +3,11 @@ import { writeFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { readRollout, readRolloutCwd } from "../../src/transcript/codex.ts";
+import {
+  readLatestDioneSource,
+  readRollout,
+  readRolloutCwd,
+} from "../../src/transcript/codex.ts";
 
 const FIXTURE = fileURLToPath(new URL("../fixtures/codex-rollout.jsonl", import.meta.url));
 
@@ -120,6 +124,79 @@ test("extracts Dione author provenance and stores only authored content", () => 
       occurredAt: "2026-07-27T09:00:00Z",
     },
   }]);
+});
+
+test("reads the latest Dione scope backward across a large rollout tail", () => {
+  const dione = [
+    "A Discord event arrived through Dione.",
+    "",
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/claude/channel",
+      params: {
+        content: "latest scoped turn",
+        meta: {
+          chat_id: "moonpool",
+          message_id: "message-latest",
+          user: "Vesper",
+          user_id: "vesper-id",
+        },
+      },
+    }),
+  ].join("\n");
+  const path = writeRollout([
+    ...Array.from({ length: 2_000 }, (_, index) => ({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: `older-${index}-${"x".repeat(80)}` }],
+      },
+    })),
+    { type: "event_msg", payload: { type: "user_message", client_id: "dione-8", message: dione } },
+    ...Array.from({ length: 20 }, (_, index) => ({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: `newer-${index}` }],
+      },
+    })),
+  ]);
+
+  expect(readLatestDioneSource(path)).toEqual({
+    kind: "dione",
+    userId: "vesper-id",
+    userName: "Vesper",
+    channelId: "moonpool",
+    messageId: "message-latest",
+  });
+});
+
+test("latest non-Dione user boundary fails closed instead of reusing an older scope", () => {
+  const dione = [
+    "A Discord event arrived through Dione.",
+    "",
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/claude/channel",
+      params: {
+        content: "older scoped turn",
+        meta: {
+          chat_id: "moonpool",
+          message_id: "message-older",
+          user: "Vesper",
+          user_id: "vesper-id",
+        },
+      },
+    }),
+  ].join("\n");
+  const path = writeRollout([
+    { type: "event_msg", payload: { type: "user_message", client_id: "dione-8", message: dione } },
+    { type: "event_msg", payload: { type: "user_message", message: "new direct turn" } },
+  ]);
+
+  expect(readLatestDioneSource(path)).toBeUndefined();
 });
 
 test("drops malformed authenticated Dione turns instead of attributing the wrapper", () => {
