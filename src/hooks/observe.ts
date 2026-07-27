@@ -74,7 +74,13 @@ export async function observe(input: ObserveInput): Promise<string> {
   // direct-user session.
   if (!input.transcript_path) return "";
   const turns = readRolloutRecords(input.transcript_path);
-  const lastUser = [...turns].reverse().find((turn) => turn.role === "user");
+  let lastUser = turns[turns.length - 1];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    if (turns[index].role === "user") {
+      lastUser = turns[index];
+      break;
+    }
+  }
   if (!lastUser?.source || lastUser.persist === false) return "";
 
   const cwd = input.cwd || process.cwd();

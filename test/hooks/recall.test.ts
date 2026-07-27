@@ -26,5 +26,8 @@ test("Dione routing forbids unscoped SessionStart memory injection", async () =>
 
   // Returning before createSession is load-bearing: this test has no Honcho
   // endpoint and would attempt network access if the boundary regressed.
-  expect(await recall({ cwd: "/repo", session_id: "thread" })).toBe("");
+  const out = await recall({ cwd: "/repo", session_id: "thread" });
+  expect(out).toContain("Honcho memory tools are available via MCP");
+  expect(out).not.toContain("syn");
+  expect(out).not.toContain("View this session in Honcho");
 });

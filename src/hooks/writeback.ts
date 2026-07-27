@@ -33,7 +33,7 @@ export function capture(
   dioneRouting = false,
 ): number {
   const turns = readRolloutRecords(rolloutPath);
-  const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key));
+  const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key, turns));
   if (fresh.length === 0) return 0;
   const freshIds = new Set(fresh.map((turn) => turn.recordId));
   let activeScope: string | undefined;
@@ -41,7 +41,12 @@ export function capture(
     if (t.role === "user") activeScope = t.source?.channelId;
     if (!freshIds.has(t.recordId)) return [];
     if (t.persist === false) return [];
-    if (dioneRouting && t.role === "assistant" && !activeScope) return [];
+    if (dioneRouting && t.role === "assistant" && !activeScope) {
+      console.warn(
+        `[codex-honcho] suppressed unscoped assistant record ${t.recordId} while Dione routing is active`,
+      );
+      return [];
+    }
     return [{
       role: t.role,
       text: t.text,

@@ -8,8 +8,10 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
+import type { DioneSource } from "./transcript/codex.ts";
 
 // A durable, human-readable outbox. Capture hooks append here instantly (local,
 // no network) so everything recorded is visible live (`tail -f`); a background
@@ -33,14 +35,7 @@ export interface QueueEntry {
   // separate from peer identity so the same peer can participate in multiple
   // sessions without any session inheriting another's history.
   scopeId?: string;
-  source?: {
-    kind: "dione";
-    userId: string;
-    userName: string;
-    channelId: string;
-    messageId: string;
-    occurredAt?: string;
-  };
+  source?: DioneSource;
 }
 
 // Turn a memory key (which can contain "/", ":", ".", spaces from repo paths,
@@ -91,8 +86,12 @@ export function readQueue(key: string): QueueEntry[] {
 export function sentCount(key: string): number {
   try {
     const raw = readFileSync(sentPath(key), "utf-8").trim();
-    const parsed = JSON.parse(raw) as { count?: unknown };
-    const n = typeof parsed.count === "number" ? parsed.count : Number.NaN;
+    const parsed = JSON.parse(raw) as { count?: unknown } | number;
+    const n = typeof parsed === "number"
+      ? parsed
+      : typeof parsed.count === "number"
+        ? parsed.count
+        : Number.NaN;
     return Number.isFinite(n) && n >= 0 ? n : 0;
   } catch {
     try {
@@ -113,7 +112,13 @@ interface SentState {
 function readSentState(key: string): SentState {
   try {
     const raw = readFileSync(sentPath(key), "utf-8").trim();
-    const parsed = JSON.parse(raw) as Partial<SentState>;
+    const parsed = JSON.parse(raw) as Partial<SentState> | number;
+    if (typeof parsed === "number") {
+      return {
+        count: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0,
+        quarantines: [],
+      };
+    }
     return {
       count: typeof parsed.count === "number" && parsed.count >= 0 ? parsed.count : 0,
       quarantines: Array.isArray(parsed.quarantines) ? parsed.quarantines : [],
@@ -127,19 +132,36 @@ function writeSentState(key: string, state: SentState): void {
   mkdirSync(queueDir(), { recursive: true });
   const path = sentPath(key);
   const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, JSON.stringify(state));
-  const file = openSync(temporary, "r");
+  let renamed = false;
   try {
-    fsyncSync(file);
+    writeFileSync(temporary, JSON.stringify(state));
+    const file = openSync(temporary, "r");
+    try {
+      fsyncSync(file);
+    } finally {
+      closeSync(file);
+    }
+    renameSync(temporary, path);
+    renamed = true;
+    try {
+      const directory = openSync(queueDir(), "r");
+      try {
+        fsyncSync(directory);
+      } finally {
+        closeSync(directory);
+      }
+    } catch {
+      // Directory fsync is not portable. The marker replacement itself is
+      // still atomic, so do not report failure after it has already landed.
+    }
   } finally {
-    closeSync(file);
-  }
-  renameSync(temporary, path);
-  const directory = openSync(queueDir(), "r");
-  try {
-    fsyncSync(directory);
-  } finally {
-    closeSync(directory);
+    if (!renamed) {
+      try {
+        unlinkSync(temporary);
+      } catch {
+        // Nothing to clean up.
+      }
+    }
   }
 }
 
@@ -211,10 +233,12 @@ export function readQuarantine(key: string): QuarantineReceipt[] {
     }
   });
   const durable = readSentState(key).quarantines;
-  const seen = new Set(legacy.map((receipt) => `${receipt.queueIndex}:${receipt.reason}`));
+  const receiptKey = (receipt: QuarantineReceipt) =>
+    `${receipt.queueIndex}:${receipt.reason}:${receipt.quarantinedAt}`;
+  const seen = new Set(legacy.map(receiptKey));
   return [
     ...legacy,
-    ...durable.filter((receipt) => !seen.has(`${receipt.queueIndex}:${receipt.reason}`)),
+    ...durable.filter((receipt) => !seen.has(receiptKey(receipt))),
   ];
 }
 

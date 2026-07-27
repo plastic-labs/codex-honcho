@@ -164,6 +164,10 @@ The plugin hooks into Codex's lifecycle events:
 
 Capture is **local-first**: hooks only ever append to a plain JSONL queue, so they're instant and never touch the network. The flush is lock-guarded and advances a per-chunk sent marker, so a failed or partial upload simply stays queued and retries on the next turn. Inspect the local queue any time with `tail -f ~/.honcho/codex/queue/*.jsonl`, and run `codex-honcho status` to see the pending depth plus a deep link to your session in the Honcho GUI to confirm what landed server-side.
 
+> **Upgrade note:** Dione routing is enabled by default. Direct-only Codex
+> installs that need the prior unscoped SessionStart recall and MCP registration
+> must set `"dioneRouting": false` under the Codex host configuration.
+
 ## Troubleshooting
 
 **No memory loading / MCP not registered.** Confirm your key is in `~/.honcho/config.json` (`codex-honcho status` shows `honcho config: found`). If it's missing, run `honcho init` (or add `{ "apiKey": "hch-…" }` to the file yourself), then re-run `codex-honcho install` — without a key, install registers the hooks and skill but skips the MCP server.
