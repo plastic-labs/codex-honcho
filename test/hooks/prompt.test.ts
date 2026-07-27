@@ -38,3 +38,13 @@ test("returns nothing when enabled but there is no cached context (no network)",
   const out = await prompt({ prompt: "tell me about the project", cwd: "/tmp/x", session_id: "no-cache" });
   expect(out).toBe("");
 });
+
+test("Dione routing forbids unscoped per-prompt injection", async () => {
+  writeConfig({
+    apiKey: "k",
+    peerName: "testuser",
+    hosts: { codex: { injectPerPrompt: true, dioneRouting: true } },
+  });
+  const out = await prompt({ prompt: "tell me private context", cwd: "/tmp/x", session_id: "s1" });
+  expect(out).toBe("");
+});

@@ -1,11 +1,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import type { Turn } from "./transcript/codex.ts";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { RolloutRecord } from "./transcript/codex.ts";
 
 // Codex fires Stop every turn with no final SessionEnd, so writeback runs
-// repeatedly over a growing rollout. The cursor records how many turns we've
-// already shipped for a session, so each Stop uploads only the new tail.
+// repeatedly over a growing rollout. The cursor records stable rollout record
+// identities rather than a count, because earlier records can be inserted,
+// removed, or replaced between hook runs.
 
 function cursorDir(): string {
   return join(process.env.HONCHO_CONFIG_DIR || join(homedir(), ".honcho"), "codex", "cursors");
@@ -16,28 +17,47 @@ function cursorPath(sessionId: string): string {
   return join(cursorDir(), `${safe}.json`);
 }
 
-export function readCursor(sessionId: string): number {
+export interface Cursor {
+  seen: string[];
+}
+
+export function readCursor(sessionId: string): Cursor {
   try {
-    const { count } = JSON.parse(readFileSync(cursorPath(sessionId), "utf-8"));
-    return typeof count === "number" && count >= 0 ? count : 0;
+    const value = JSON.parse(readFileSync(cursorPath(sessionId), "utf-8"));
+    if (Array.isArray(value.seen) && value.seen.every((id: unknown) => typeof id === "string")) {
+      return { seen: value.seen };
+    }
+    // A count-only cursor cannot safely identify which records it observed.
+    // Re-read and rely on queue/remote receipt deduplication during migration.
+    return { seen: [] };
   } catch {
-    return 0;
+    return { seen: [] };
   }
 }
 
-export function writeCursor(sessionId: string, count: number): void {
+export function writeCursor(sessionId: string, cursor: Cursor): void {
   mkdirSync(cursorDir(), { recursive: true });
-  writeFileSync(cursorPath(sessionId), JSON.stringify({ count, at: new Date().toISOString() }));
+  writeFileSync(cursorPath(sessionId), JSON.stringify({
+    seen: cursor.seen,
+    at: new Date().toISOString(),
+  }));
 }
 
 export interface Delta {
-  fresh: Turn[];
-  nextCursor: number;
+  fresh: RolloutRecord[];
+  nextCursor: Cursor;
 }
 
-// Pure: pick the turns not yet uploaded. A shrunken transcript (cursor past
-// the end, e.g. a cleared session) resets to the full set.
-export function selectNewTurns(turns: Turn[], cursor: number): Delta {
-  const start = cursor <= turns.length ? cursor : 0;
-  return { fresh: turns.slice(start), nextCursor: turns.length };
+// Pure: pick records whose stable identities have not been observed. Preserve
+// identities for records no longer in the transcript so a later reappearance
+// cannot be mistaken for a new turn.
+export function selectNewTurns(turns: RolloutRecord[], cursor: Cursor): Delta {
+  const seen = new Set(cursor.seen);
+  const fresh = turns.filter((turn) => !seen.has(turn.recordId));
+  return {
+    fresh,
+    nextCursor: {
+      seen: [...cursor.seen, ...fresh.map((turn) => turn.recordId)],
+    },
+  };
 }

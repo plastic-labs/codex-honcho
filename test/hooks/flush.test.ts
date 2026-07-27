@@ -1,31 +1,60 @@
 import { test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { enqueue, sentCount, pendingCount, setSentCount } from "../../src/queue.ts";
+import {
+  enqueue,
+  readQuarantine,
+  sentCount,
+  pendingCount,
+  setSentCount,
+} from "../../src/queue.ts";
 import { lockPath } from "../../src/hooks/flush.ts";
 
 // Captured by the mocked memory boundary so flush never hits the network.
 interface SentMsg {
-  peer: "user" | "ai";
+  peer: string;
   text: string;
-  opts?: { createdAt?: string; metadata?: { type?: string } };
+  opts?: { createdAt?: string; metadata?: Record<string, string> };
+  metadata?: Record<string, string>;
 }
 let batches: SentMsg[][] = [];
+let batchSessions: string[] = [];
+let memberships: Array<{
+  session: string;
+  peers: Array<[string, { observeMe: boolean; observeOthers: boolean }]>;
+}> = [];
 let addCalls = 0;
 let failOnCalls = new Set<number>();
+let failAfterWriteOnCalls = new Set<number>();
+let remoteReceipts = new Set<string>();
 
 mock.module("../../src/memory.ts", () => ({
-  getSession: async () => ({
+  getSession: async (_config: unknown, name: string) => ({
     session: {
+      addPeers: async (peers: Array<[string, { observeMe: boolean; observeOthers: boolean }]>) => {
+        memberships.push({ session: name, peers });
+      },
       addMessages: async (msgs: SentMsg[]) => {
         addCalls += 1;
         if (failOnCalls.has(addCalls)) throw new Error("simulated upload failure");
         batches.push(msgs);
+        batchSessions.push(name);
+        for (const msg of msgs) {
+          const receipt = msg.metadata?.integration_receipt;
+          if (receipt) remoteReceipts.add(receipt);
+        }
+        if (failAfterWriteOnCalls.has(addCalls)) throw new Error("simulated crash after remote acceptance");
       },
+      messages: async (options?: { filters?: { metadata?: { integration_receipt?: string } } }) => ({
+        items: remoteReceipts.has(options?.filters?.metadata?.integration_receipt || "") ? [{}] : [],
+      }),
     },
-    userPeer: { message: (text: string, opts?: SentMsg["opts"]) => ({ peer: "user", text, opts }) },
-    aiPeer: { message: (text: string, opts?: SentMsg["opts"]) => ({ peer: "ai", text, opts }) },
+    userPeer: { message: (text: string, opts?: SentMsg["opts"]) => ({ peer: "user", text, opts, metadata: opts?.metadata }) },
+    aiPeer: { message: (text: string, opts?: SentMsg["opts"]) => ({ peer: "ai", text, opts, metadata: opts?.metadata }) },
+    peerFor: async (peerId: string) => ({
+      message: (text: string, opts?: SentMsg["opts"]) => ({ peer: peerId, text, opts, metadata: opts?.metadata }),
+    }),
   }),
 }));
 
@@ -48,8 +77,12 @@ beforeEach(() => {
   process.env.HONCHO_CONFIG_DIR = dir;
   writeFileSync(join(dir, "config.json"), JSON.stringify({ apiKey: "hch-test", peerName: "tester" }));
   batches = [];
+  batchSessions = [];
+  memberships = [];
   addCalls = 0;
   failOnCalls = new Set();
+  failAfterWriteOnCalls = new Set();
+  remoteReceipts = new Set();
 });
 
 afterEach(() => {
@@ -134,6 +167,123 @@ test("a first-chunk failure leaves the marker at zero so the whole batch retries
   expect(sentCount("s1")).toBe(10);
 });
 
+test("a retry after remote acceptance skips the prior receipt instead of duplicating", async () => {
+  enqueue("s1", [{
+    role: "user",
+    text: "exactly once",
+    at: "2026-06-09T00:00:00Z",
+    receiptId: "codex:s1:turn:0",
+  }]);
+  failAfterWriteOnCalls = new Set([1]);
+
+  await expect(runFlush()).rejects.toThrow("simulated crash after remote acceptance");
+  expect(sentCount("s1")).toBe(0);
+  expect(batches.flat().map((message) => message.text)).toEqual(["exactly once"]);
+
+  batches = [];
+  batchSessions = [];
+  failAfterWriteOnCalls = new Set();
+  await runFlush();
+
+  expect(batches).toEqual([]);
+  expect(sentCount("s1")).toBe(1);
+  expect(remoteReceipts).toEqual(new Set(["codex:s1:turn:0:part:1/1"]));
+});
+
+test("duplicate receipts in one pending batch upload exactly once", async () => {
+  const duplicate = {
+    role: "user" as const,
+    text: "captured before cursor acknowledgement",
+    receiptId: "codex:s1:turn:0",
+  };
+  enqueue("s1", [duplicate, duplicate]);
+
+  await runFlush();
+
+  expect(batches.flat().map((message) => message.text)).toEqual([
+    "captured before cursor acknowledgement",
+  ]);
+  expect(sentCount("s1")).toBe(2);
+});
+
+test("legacy Dione entries without routing authority are durably quarantined", async () => {
+  enqueue("s1", [{
+    role: "user",
+    text: "old collapsed wrapper",
+    source: {
+      kind: "dione",
+      userId: "syn-id",
+      userName: "syn",
+      channelId: "moonpool",
+      messageId: "m-old",
+    },
+  }]);
+
+  await runFlush();
+  expect(addCalls).toBe(0);
+  expect(sentCount("s1")).toBe(1);
+  expect(readQuarantine("s1")).toHaveLength(1);
+  expect(readQuarantine("s1")[0]).toMatchObject({
+    queueIndex: 0,
+    reason: "legacy Dione entry lacks scope, receipt, or peer routing authority",
+    entry: { text: "old collapsed wrapper" },
+  });
+});
+
+test("quarantine advancement stores its receipt in the authoritative marker", async () => {
+  enqueue("s1", [{
+    role: "user",
+    text: "A Discord event arrived through Dione.\n\n{}",
+  }]);
+
+  await runFlush();
+  const marker = JSON.parse(
+    readFileSync(join(process.env.HONCHO_CONFIG_DIR!, "codex", "queue", "s1.sent"), "utf-8"),
+  );
+  expect(marker.count).toBe(1);
+  expect(marker.quarantines).toHaveLength(1);
+  expect(marker.quarantines[0].entry.text).toContain("Discord event");
+});
+
+test("a quarantined legacy entry does not poison later valid messages", async () => {
+  enqueue("s1", [
+    {
+      role: "user",
+      text: "old collapsed wrapper",
+      source: {
+        kind: "dione",
+        userId: "unknown",
+        userName: "unknown",
+        channelId: "moonpool",
+        messageId: "m-old",
+      },
+    },
+    { role: "assistant", text: "later valid reply" },
+  ]);
+
+  await runFlush();
+  expect(batches.flat().map((message) => message.text)).toEqual(["later valid reply"]);
+  expect(sentCount("s1")).toBe(2);
+  expect(readQuarantine("s1").map((receipt) => receipt.entry.text)).toEqual([
+    "old collapsed wrapper",
+  ]);
+});
+
+test("actual pre-upgrade wrapper shape is quarantined instead of sent as the operator", async () => {
+  enqueue("s1", [{
+    role: "user",
+    text: "A Discord event arrived through Dione.\n\n{\"jsonrpc\":\"2.0\"}",
+    at: "2026-07-27T00:00:00Z",
+  }]);
+
+  await runFlush();
+  expect(batches).toEqual([]);
+  expect(sentCount("s1")).toBe(1);
+  expect(readQuarantine("s1")[0]).toMatchObject({
+    reason: "legacy Dione wrapper lacks authenticated author and scope",
+  });
+});
+
 test("tool entries get a [tool] prefix and type metadata; user/assistant route to the right peer", async () => {
   enqueue("s1", [
     { role: "user", text: "do the thing", at: "2026-06-09T00:00:00Z" },
@@ -148,6 +298,131 @@ test("tool entries get a [tool] prefix and type metadata; user/assistant route t
   expect(msgs[1]).toMatchObject({ peer: "ai", text: "[tool] ran: bun test", opts: { metadata: { type: "tool" } } });
   expect(msgs[2]).toMatchObject({ peer: "ai", text: "done" });
   expect(msgs[0].opts?.metadata).toBeUndefined();
+});
+
+test("routes Dione entries to distinct peers with source metadata", async () => {
+  enqueue("s1", [
+    {
+      role: "user",
+      text: "from syn",
+      peerId: "syn",
+      scopeId: "moonpool",
+      receiptId: "dione:message:moonpool:m1",
+      source: {
+        kind: "dione",
+        userId: "syn-id",
+        userName: "syn",
+        channelId: "moonpool",
+        messageId: "m1",
+      },
+    },
+    {
+      role: "user",
+      text: "from Vesper",
+      peerId: "discord-vesper-id",
+      scopeId: "moonpool",
+      receiptId: "dione:message:moonpool:m2",
+      source: {
+        kind: "dione",
+        userId: "vesper-id",
+        userName: "Vesper",
+        channelId: "moonpool",
+        messageId: "m2",
+      },
+    },
+    {
+      role: "assistant",
+      text: "from Callisto",
+      scopeId: "moonpool",
+      receiptId: "codex:s1:turn:2:reply",
+    },
+  ]);
+
+  await runFlush();
+  const msgs = batches.flat();
+  expect(msgs.map((message) => [message.peer, message.text])).toEqual([
+    ["syn", "from syn"],
+    ["discord-vesper-id", "from Vesper"],
+    ["ai", "from Callisto"],
+  ]);
+  expect(msgs[0].opts?.metadata).toMatchObject({
+    source: "dione",
+    discord_user_id: "syn-id",
+    discord_message_id: "m1",
+  });
+  expect(sentCount("s1")).toBe(3);
+});
+
+test("same peer across two Dione scopes writes to separate authorized sessions", async () => {
+  enqueue("s1", [
+    {
+      role: "user",
+      text: "private",
+      peerId: "syn",
+      scopeId: "dm-channel",
+      receiptId: "dione:message:dm-channel:m1",
+      source: {
+        kind: "dione",
+        userId: "syn-id",
+        userName: "syn",
+        channelId: "dm-channel",
+        messageId: "m1",
+      },
+    },
+    {
+      role: "assistant",
+      text: "private reply",
+      scopeId: "dm-channel",
+      receiptId: "codex:s1:turn:1:private",
+    },
+    {
+      role: "user",
+      text: "moonpool",
+      peerId: "syn",
+      scopeId: "moonpool",
+      receiptId: "dione:message:moonpool:m2",
+      source: {
+        kind: "dione",
+        userId: "syn-id",
+        userName: "syn",
+        channelId: "moonpool",
+        messageId: "m2",
+      },
+    },
+    {
+      role: "assistant",
+      text: "moonpool reply",
+      scopeId: "moonpool",
+      receiptId: "codex:s1:turn:3:moonpool",
+    },
+  ]);
+
+  await runFlush();
+
+  expect(batchSessions).toEqual([
+    "proj-discord-dm-channel",
+    "proj-discord-moonpool",
+  ]);
+  expect(batches.map((batch) => batch.map((message) => message.text))).toEqual([
+    ["private", "private reply"],
+    ["moonpool", "moonpool reply"],
+  ]);
+  expect(memberships).toEqual([
+    {
+      session: "proj-discord-dm-channel",
+      peers: [
+        ["codex", { observeMe: true, observeOthers: true }],
+        ["syn", { observeMe: true, observeOthers: false }],
+      ],
+    },
+    {
+      session: "proj-discord-moonpool",
+      peers: [
+        ["codex", { observeMe: true, observeOthers: true }],
+        ["syn", { observeMe: true, observeOthers: false }],
+      ],
+    },
+  ]);
 });
 
 test("splits an oversized message into parts instead of dropping the tail", async () => {

@@ -31,7 +31,9 @@ interface HostBlock {
   saveMessages?: boolean;
   reasoningLevel?: string;
   injectPerPrompt?: boolean;
+  dioneRouting?: boolean;
   sessionStrategy?: SessionStrategy;
+  dionePeers?: Record<string, string>;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
 }
 
@@ -53,10 +55,14 @@ export interface Config {
   // Inject prompt-relevant context on every turn. Off by default — lean
   // session-start context plus the MCP tools cover depth on demand.
   injectPerPrompt: boolean;
+  // Route authenticated Dione turns into channel-scoped sessions. Until a
+  // turn supplies that scope, unscoped base-memory injection is forbidden.
+  dioneRouting: boolean;
   // How Honcho session names are derived (default per-directory).
   sessionStrategy: SessionStrategy;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
   sessions?: Record<string, string>;
+  dionePeers: Record<string, string>;
 }
 
 function readFile(): FileConfig {
@@ -102,9 +108,14 @@ export function loadConfig(): Config | null {
     saveMessages: (host?.saveMessages ?? raw.saveMessages) !== false,
     reasoningLevel: host?.reasoningLevel ?? raw.reasoningLevel ?? "low",
     injectPerPrompt: (host?.injectPerPrompt ?? raw.injectPerPrompt) === true,
+    // SessionStart cannot know whether this thread will later receive a Dione
+    // event, so the safe mode is the default. Direct-only installs must opt
+    // back into unscoped recall explicitly.
+    dioneRouting: (host?.dioneRouting ?? raw.dioneRouting) !== false,
     sessionStrategy: host?.sessionStrategy ?? raw.sessionStrategy ?? "per-directory",
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,
+    dionePeers: host?.dionePeers ?? raw.dionePeers ?? {},
   };
 }
 
@@ -182,6 +193,19 @@ export function sessionName(config: Config, cwd: string, sessionId?: string): st
     default:
       return repo;
   }
+}
+
+// Dione conversation authority is scoped independently from peer identity.
+// The same Discord user can therefore retain one peer across many rooms while
+// each channel/DM/thread gets a separate Honcho session and history boundary.
+export function scopedSessionName(
+  config: Config,
+  cwd: string,
+  sessionId: string | undefined,
+  scopeId: string | undefined,
+): string {
+  const base = sessionName(config, cwd, sessionId);
+  return scopeId ? `${base}-discord-${slug(scopeId)}` : base;
 }
 
 // Stable key for cursor/cache/queue files: the Codex session id when present,

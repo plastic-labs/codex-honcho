@@ -2,7 +2,7 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, sessionName } from "../src/config.ts";
+import { loadConfig, scopedSessionName, sessionName } from "../src/config.ts";
 
 let dir = "";
 const savedDir = process.env.HONCHO_CONFIG_DIR;
@@ -106,4 +106,33 @@ test("git-branch falls back to directory outside a repo", () => {
   const cfg = loadConfig()!;
   const plain = mkdtempSync(join(tmpdir(), "codex-honcho-plain-"));
   expect(sessionName(cfg, plain)).toBe(basename(plain).toLowerCase().replace(/[^a-z0-9-_]/g, "-"));
+});
+
+test("Dione scope changes session authority without changing peer identity", () => {
+  const config = {
+    apiKey: "test",
+    peerName: "syn",
+    workspace: "hermes",
+    aiPeer: "Callisto",
+    enabled: true,
+    saveMessages: true,
+    reasoningLevel: "low",
+    injectPerPrompt: false,
+    dioneRouting: true,
+    sessionStrategy: "chat-instance" as const,
+    dionePeers: {},
+  };
+  expect(scopedSessionName(config, "/repo/project", "thread-123456789", "moonpool")).toBe(
+    "project-thread-1-discord-moonpool",
+  );
+  expect(scopedSessionName(config, "/repo/project", "thread-123456789", "private-dm")).toBe(
+    "project-thread-1-discord-private-dm",
+  );
+});
+
+test("Dione-safe routing defaults on and direct-only mode is explicit", () => {
+  writeConfig({ apiKey: "k", peerName: "testuser" });
+  expect(loadConfig()!.dioneRouting).toBe(true);
+  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { dioneRouting: false } } });
+  expect(loadConfig()!.dioneRouting).toBe(false);
 });
