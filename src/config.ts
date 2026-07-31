@@ -11,7 +11,15 @@ export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
 // it persists the resolved API key + peer name here (merging, never clobbering
 // other integrations' settings) so the shared file is the source of truth.
 
-const HOST = "codex";
+// The default host key is "codex", but HONCHO_HOST can override it so that
+// multiple codex host blocks (e.g. codex_reviewer, codex_coder) can coexist
+// in ~/.honcho/config.json and be selected per-session via environment variable.
+// This mirrors the HONCHO_HOST env var already supported by claude-honcho.
+const DEFAULT_HOST = "codex";
+
+function resolveHost(): string {
+  return process.env.HONCHO_HOST || DEFAULT_HOST;
+}
 
 function configPath(): string {
   const dir = process.env.HONCHO_CONFIG_DIR || join(homedir(), ".honcho");
@@ -79,16 +87,20 @@ export function resolvePeerName(filePeer?: string): string {
 // Returns null when there's no API key — callers exit quietly in that case.
 export function loadConfig(): Config | null {
   const raw = readFile();
-  const host = raw.hosts?.[HOST];
+  const HOST = resolveHost();
+  const host = raw.hosts?.[HOST]
+    ?? raw.hosts?.[HOST.replace(/_/g, "-")]
+    ?? raw.hosts?.[HOST.replace(/-/g, "_")];
 
   const apiKey = process.env.HONCHO_API_KEY || host?.apiKey || raw.apiKey;
   if (!apiKey) return null;
 
   const peerName = resolvePeerName(raw.peerName);
 
-  const workspace = raw.globalOverride
-    ? raw.workspace ?? HOST
-    : host?.workspace ?? raw.workspace ?? HOST;
+  const workspace = process.env.HONCHO_WORKSPACE
+    ?? (raw.globalOverride
+      ? raw.workspace ?? HOST
+      : host?.workspace ?? raw.workspace ?? HOST);
   const aiPeer = raw.globalOverride
     ? raw.aiPeer ?? HOST
     : host?.aiPeer ?? raw.aiPeer ?? HOST;
@@ -112,6 +124,7 @@ export function loadConfig(): Config | null {
 // applied). `install` uses this to decide what's missing and must be prompted.
 export function currentIdentity(): { apiKey?: string; peerName?: string } {
   const raw = readFile();
+  const HOST = resolveHost();
   return {
     apiKey: process.env.HONCHO_API_KEY || raw.hosts?.[HOST]?.apiKey || raw.apiKey,
     peerName: raw.peerName,
