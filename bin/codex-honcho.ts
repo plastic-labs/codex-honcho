@@ -116,8 +116,12 @@ switch (command) {
     console.log(`Installed Codex hooks → ${DEFAULT_HOOKS_PATH}`);
     console.log(`Enabled [features].hooks → ${DEFAULT_CONFIG_PATH}`);
     console.log(`Installed memory skill → ${installSkill()}`);
+    const config = loadConfig();
     const id = mcpIdentity();
-    if (id) {
+    if (config?.dioneRouting) {
+      removeMcpServer();
+      console.log("Skipped unscoped Honcho MCP registration — Dione routing is enabled.");
+    } else if (id) {
       installMcpServer(id);
       console.log(`Registered Honcho MCP (mcp.honcho.dev) → ${DEFAULT_CONFIG_PATH}`);
     } else {

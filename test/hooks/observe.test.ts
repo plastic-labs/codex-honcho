@@ -1,5 +1,27 @@
-import { test, expect } from "bun:test";
-import { summarizeTool } from "../../src/hooks/observe.ts";
+import { test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { observe, summarizeTool } from "../../src/hooks/observe.ts";
+import { readQueue } from "../../src/queue.ts";
+
+const savedDir = process.env.HONCHO_CONFIG_DIR;
+let dir = "";
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "codex-honcho-observe-"));
+  process.env.HONCHO_CONFIG_DIR = dir;
+  writeFileSync(join(dir, "config.json"), JSON.stringify({
+    apiKey: "hch-test",
+    peerName: "syn",
+  }));
+});
+
+afterEach(() => {
+  if (savedDir === undefined) delete process.env.HONCHO_CONFIG_DIR;
+  else process.env.HONCHO_CONFIG_DIR = savedDir;
+  rmSync(dir, { recursive: true, force: true });
+});
 
 test("summarizes a shell command from an argv array", () => {
   expect(summarizeTool("shell", { command: ["npm", "run", "build"] })).toBe("ran: npm run build");
@@ -44,4 +66,90 @@ test("never records Honcho's own MCP calls (circular)", () => {
 
 test("empty tool name yields nothing", () => {
   expect(summarizeTool("", {})).toBe("");
+});
+
+test("scopes tool observations from authenticated rollout provenance", async () => {
+  const transcript = join(dir, "rollout.jsonl");
+  const dione = [
+    "A Discord event arrived through Dione.",
+    "",
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/claude/channel",
+      params: {
+        content: "please build it",
+        meta: {
+          chat_id: "1529173139639238738",
+          message_id: "1531313256650768474",
+          user: "syn",
+          user_id: "161358348577406976",
+        },
+      },
+    }),
+  ].join("\n");
+  writeFileSync(transcript, [
+    { type: "event_msg", payload: { type: "user_message", client_id: "dione-1", message: dione } },
+  ].map((line) => JSON.stringify(line)).join("\n"));
+
+  await observe({
+    tool_name: "Bash",
+    tool_input: { command: "npm run build" },
+    cwd: "/repo/proj",
+    session_id: "s1",
+    transcript_path: transcript,
+    tool_call_id: "tool-1",
+  });
+
+  expect(readQueue("s1")).toMatchObject([{
+    role: "tool",
+    text: "ran: npm run build",
+    scopeId: "1529173139639238738",
+    receiptId: "codex:tool:s1:tool-1",
+  }]);
+});
+
+test("drops tool observations when conversation scope cannot be proven", async () => {
+  await observe({
+    tool_name: "Bash",
+    tool_input: { command: "npm run build" },
+    cwd: "/repo/proj",
+    session_id: "s2",
+  });
+  expect(readQueue("s2")).toEqual([]);
+});
+
+test("ignored Dione boundary prevents reuse of an earlier channel for tools", async () => {
+  const transcript = join(dir, "boundary-rollout.jsonl");
+  const message = (content: string, type?: string) => [
+    "A Discord event arrived through Dione.",
+    "",
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/claude/channel",
+      params: {
+        content,
+        meta: {
+          chat_id: "moonpool",
+          message_id: type ? "reaction-1" : "message-1",
+          user: "syn",
+          user_id: "syn-id",
+          ...(type ? { type } : {}),
+        },
+      },
+    }),
+  ].join("\n");
+  writeFileSync(transcript, [
+    { type: "event_msg", payload: { type: "user_message", client_id: "dione-1", message: message("hello") } },
+    { type: "event_msg", payload: { type: "user_message", client_id: "dione-2", message: message("reacted", "reaction") } },
+  ].map((line) => JSON.stringify(line)).join("\n"));
+
+  await observe({
+    tool_name: "Bash",
+    tool_input: { command: "npm run build" },
+    cwd: "/repo/proj",
+    session_id: "boundary-tool",
+    transcript_path: transcript,
+    tool_call_id: "tool-boundary",
+  });
+  expect(readQueue("boundary-tool")).toEqual([]);
 });
