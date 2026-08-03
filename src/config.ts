@@ -2,6 +2,10 @@ import { homedir } from "node:os";
 import { join, basename, dirname } from "node:path";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
 import { currentBranch } from "./git.ts";
+import {
+  type DionePeerRegistry,
+  validateDionePeerRegistry,
+} from "./dione-peers.ts";
 
 export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
 
@@ -34,6 +38,7 @@ interface HostBlock {
   dioneRouting?: boolean;
   sessionStrategy?: SessionStrategy;
   dionePeers?: Record<string, string>;
+  dionePeerRegistry?: DionePeerRegistry;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
 }
 
@@ -63,6 +68,7 @@ export interface Config {
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
   sessions?: Record<string, string>;
   dionePeers: Record<string, string>;
+  dionePeerRegistry: DionePeerRegistry;
 }
 
 function readFile(): FileConfig {
@@ -99,6 +105,12 @@ export function loadConfig(): Config | null {
     ? raw.aiPeer ?? HOST
     : host?.aiPeer ?? raw.aiPeer ?? HOST;
 
+  const dionePeers = host?.dionePeers ?? raw.dionePeers ?? {};
+  const dionePeerRegistry = validateDionePeerRegistry(
+    host?.dionePeerRegistry ?? raw.dionePeerRegistry ?? {},
+    dionePeers,
+  );
+
   return {
     apiKey,
     peerName,
@@ -115,7 +127,8 @@ export function loadConfig(): Config | null {
     sessionStrategy: host?.sessionStrategy ?? raw.sessionStrategy ?? "per-directory",
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,
-    dionePeers: host?.dionePeers ?? raw.dionePeers ?? {},
+    dionePeers,
+    dionePeerRegistry,
   };
 }
 

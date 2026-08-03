@@ -121,6 +121,7 @@ test("Dione scope changes session authority without changing peer identity", () 
     dioneRouting: true,
     sessionStrategy: "chat-instance" as const,
     dionePeers: {},
+    dionePeerRegistry: {},
   };
   expect(scopedSessionName(config, "/repo/project", "thread-123456789", "moonpool")).toBe(
     "project-thread-1-discord-moonpool",
@@ -135,4 +136,25 @@ test("Dione-safe routing defaults on and direct-only mode is explicit", () => {
   expect(loadConfig()!.dioneRouting).toBe(true);
   writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { dioneRouting: false } } });
   expect(loadConfig()!.dioneRouting).toBe(false);
+});
+
+test("loads a typed Dione display registry without changing its peer binding", () => {
+  writeConfig({
+    apiKey: "k",
+    dionePeers: { "303": "syn" },
+    dionePeerRegistry: {
+      "303": {
+        displayName: "syn",
+        aliases: ["Syne"],
+        peerId: "syn",
+        provenance: "existing intentional continuity mapping",
+      },
+    },
+  });
+  expect(loadConfig()!.dionePeerRegistry["303"]).toEqual({
+    displayName: "syn",
+    aliases: ["Syne"],
+    peerId: "syn",
+    provenance: "existing intentional continuity mapping",
+  });
 });

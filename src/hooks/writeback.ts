@@ -4,6 +4,10 @@ import { readCursor, writeCursor, selectNewTurns } from "../cursor.ts";
 import { enqueue } from "../queue.ts";
 import { flush } from "./flush.ts";
 import { createHash } from "node:crypto";
+import {
+  type DionePeerRegistry,
+  resolveDionePeerId,
+} from "../dione-peers.ts";
 
 interface WritebackInput {
   session_id?: string;
@@ -13,11 +17,6 @@ interface WritebackInput {
 
 // Pure-local: pull the rollout turns not yet captured into the queue and
 // advance the rollout cursor. No network — returns how many were enqueued.
-function dionePeerId(userId: string, peers: Record<string, string>): string {
-  const configured = peers[userId]?.trim();
-  return configured || `discord-${userId}`;
-}
-
 function turnReceipt(key: string, recordId: string): string {
   const digest = createHash("sha256")
     .update(recordId)
@@ -31,6 +30,7 @@ export function capture(
   rolloutPath: string,
   dionePeers: Record<string, string> = {},
   dioneRouting = false,
+  dionePeerRegistry: DionePeerRegistry = {},
 ): number {
   const turns = readRolloutRecords(rolloutPath);
   const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key, turns));
@@ -56,7 +56,7 @@ export function capture(
         : turnReceipt(key, t.recordId),
       ...(activeScope ? { scopeId: activeScope } : {}),
       ...(t.source ? {
-        peerId: dionePeerId(t.source.userId, dionePeers),
+        peerId: resolveDionePeerId(t.source.userId, dionePeers, dionePeerRegistry),
         source: t.source,
       } : {}),
     }];
@@ -82,6 +82,7 @@ export async function writeback(input: WritebackInput): Promise<string> {
     input.transcript_path,
     config.dionePeers,
     config.dioneRouting,
+    config.dionePeerRegistry,
   );
   await flush({ cwd, session_id: input.session_id });
   return "";
