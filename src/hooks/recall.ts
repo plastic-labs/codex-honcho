@@ -1,4 +1,4 @@
-import { loadConfig, sessionName, memoryKey, honchoSessionUrl } from "../config.ts";
+import { loadConfig, sessionName, memoryKey, honchoSessionUrl, isLocalEndpoint } from "../config.ts";
 import { createSession, renderContext } from "../memory.ts";
 import { readContext, writeContext, isStale, markInjected } from "../cache.ts";
 
@@ -39,11 +39,12 @@ export async function recall(input: RecallInput): Promise<string> {
   const block = renderContext(ctx, config.peerName, 5);
   if (block) markInjected(key, block);
 
-  // Codex surfaces SessionStart hook output to the user, so we append a deep
-  // link to this session in the Honcho GUI (parity with the Claude Code
-  // integration). We have the live session_id here, so the link is exact for
-  // every strategy — including chat-instance.
-  const link = `View this session in Honcho: ${honchoSessionUrl(config.workspace, name)}`;
+  // Codex surfaces SessionStart hook output to the user. Hosted mode gets an
+  // exact dashboard link; local mode reports the loopback backend and avoids a
+  // misleading link to the hosted Honcho UI.
+  const link = isLocalEndpoint(config)
+    ? "Honcho memory backend: local Docker (http://127.0.0.1:8000)"
+    : `View this session in Honcho: ${honchoSessionUrl(config.workspace, name)}`;
 
   const parts = [block, TOOL_HINT, link].filter(Boolean);
   return parts.join("\n");
