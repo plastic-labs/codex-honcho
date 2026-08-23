@@ -69,6 +69,24 @@ test("drops Codex-injected system turns (environment_context, etc.)", () => {
   expect(turns[0].text).toBe("actual question from me");
 });
 
+test("drops recommended_plugins system turn", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<recommended_plugins>\n  <plugin id=\"honcho\"/>\n</recommended_plugins>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "user message" }] } },
+  ]);
+  const turns = readRollout(path);
+  expect(turns).toHaveLength(1);
+  expect(turns[0].text).toBe("user message");
+});
+
+test("drops recommended_plugins variant with attributes", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<recommended_plugins version=\"2\">list</recommended_plugins>" }] } },
+  ]);
+  const turns = readRollout(path);
+  expect(turns).toHaveLength(0);
+});
+
 test("skips malformed lines without throwing", () => {
   const path = writeRollout([
     { type: "session_meta", payload: { cwd: "/tmp/x" } },
