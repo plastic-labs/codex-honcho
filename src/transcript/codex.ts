@@ -42,6 +42,7 @@ const CODEX_SYSTEM_TAGS = [
   "user_instructions",
   "apps_instructions",
   "plugins_instructions",
+  "recommended_plugins",
   "skills_instructions",
   "collaboration_mode",
 ];
