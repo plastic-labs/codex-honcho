@@ -131,7 +131,21 @@ Controls how Codex conversations map to Honcho sessions:
 | `git-branch` | `my-app-main` | Feature-branch workflows where context per branch matters |
 | `chat-instance` | `my-app-019ea7df` | Ephemeral usage — a clean slate per conversation |
 
-An explicit `sessions[cwd]` mapping overrides all strategies. Environment overrides: `HONCHO_API_KEY`, `HONCHO_PEER_NAME`, `HONCHO_CONFIG_DIR`.
+An explicit `sessions[cwd]` mapping overrides all strategies. Environment overrides: `HONCHO_API_KEY`, `HONCHO_PEER_NAME`, `HONCHO_CONFIG_DIR`, `HONCHO_HOST`, `HONCHO_WORKSPACE`.
+
+### Per-Session Host Selection
+
+By default, codex-honcho reads the `hosts.codex` block from `~/.honcho/config.json`. Set `HONCHO_HOST` to select a different host block, and `HONCHO_WORKSPACE` to override the workspace directly:
+
+```bash
+# Use a custom host block (e.g. hosts.codex_reviewer)
+HONCHO_HOST=codex_reviewer codex
+
+# Override workspace without a host block
+HONCHO_WORKSPACE=team-acme codex
+```
+
+This is useful when running multiple Codex instances with different Honcho workspaces from the same machine — for example, a reviewer agent that reads from a shared review workspace while the default Codex uses a personal one. Host block lookups are underscore/hyphen insensitive, so `codex_reviewer` matches `hosts."codex-reviewer"`.
 
 ## How It Works
 

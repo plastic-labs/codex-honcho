@@ -107,3 +107,57 @@ test("git-branch falls back to directory outside a repo", () => {
   const plain = mkdtempSync(join(tmpdir(), "codex-honcho-plain-"));
   expect(sessionName(cfg, plain)).toBe(basename(plain).toLowerCase().replace(/[^a-z0-9-_]/g, "-"));
 });
+
+
+test("HONCHO_HOST env var selects a different host block", () => {
+  writeConfig({
+    apiKey: "root-key",
+    peerName: "testuser",
+    hosts: {
+      codex: { workspace: "default-ws", aiPeer: "codex" },
+      codex_reviewer: { workspace: "review-ws", aiPeer: "codex-reviewer" },
+    },
+  });
+  process.env.HONCHO_HOST = "codex_reviewer";
+  const cfg = loadConfig()!;
+  expect(cfg.workspace).toBe("review-ws");
+  expect(cfg.aiPeer).toBe("codex-reviewer");
+  delete process.env.HONCHO_HOST;
+});
+
+test("HONCHO_HOST with underscores resolves hyphenated host block", () => {
+  writeConfig({
+    apiKey: "root-key",
+    peerName: "testuser",
+    hosts: {
+      "codex-reviewer": { workspace: "hyphen-ws" },
+    },
+  });
+  process.env.HONCHO_HOST = "codex_reviewer";
+  const cfg = loadConfig()!;
+  expect(cfg.workspace).toBe("hyphen-ws");
+  delete process.env.HONCHO_HOST;
+});
+
+test("HONCHO_WORKSPACE env var overrides file workspace", () => {
+  writeConfig({
+    apiKey: "root-key",
+    peerName: "testuser",
+    hosts: { codex: { workspace: "file-ws" } },
+  });
+  process.env.HONCHO_WORKSPACE = "env-ws";
+  const cfg = loadConfig()!;
+  expect(cfg.workspace).toBe("env-ws");
+  delete process.env.HONCHO_WORKSPACE;
+});
+
+test("HONCHO_HOST defaults to codex when unset", () => {
+  writeConfig({
+    apiKey: "root-key",
+    peerName: "testuser",
+    hosts: { codex: { workspace: "default-ws" } },
+  });
+  // HONCHO_HOST not set — should fall back to "codex"
+  const cfg = loadConfig()!;
+  expect(cfg.workspace).toBe("default-ws");
+});
