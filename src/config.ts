@@ -156,6 +156,18 @@ export function honchoClientOptions(config: Config) {
   };
 }
 
+export function isLocalEndpoint(config: Config): boolean {
+  if (config.endpoint?.environment === "local") return true;
+  const custom = config.endpoint?.baseUrl;
+  if (!custom) return false;
+  try {
+    const hostname = new URL(custom).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
 }

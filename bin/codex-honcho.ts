@@ -12,7 +12,7 @@ import {
 } from "../src/connectors/codex.ts";
 import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
-import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName, sessionName, honchoSessionUrl } from "../src/config.ts";
+import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName, sessionName, honchoSessionUrl, isLocalEndpoint } from "../src/config.ts";
 import { pendingCount } from "../src/queue.ts";
 
 const command = process.argv[2] ?? "";
@@ -148,11 +148,15 @@ switch (command) {
       // Deep link to inspect what actually landed server-side. We have no live
       // Codex session id here, so chat-instance can't resolve to one session —
       // link to the session for the other strategies, else the workspace view.
-      const link =
-        cfg.sessionStrategy === "chat-instance"
-          ? honchoSessionUrl(cfg.workspace, "").replace(/&session=$/, "")
-          : honchoSessionUrl(cfg.workspace, sessionName(cfg, process.cwd()));
-      console.log(`view in Honcho: ${link}`);
+      if (isLocalEndpoint(cfg)) {
+        console.log("Honcho backend: local Docker (http://127.0.0.1:8000)");
+      } else {
+        const link =
+          cfg.sessionStrategy === "chat-instance"
+            ? honchoSessionUrl(cfg.workspace, "").replace(/&session=$/, "")
+            : honchoSessionUrl(cfg.workspace, sessionName(cfg, process.cwd()));
+        console.log(`view in Honcho: ${link}`);
+      }
     }
     break;
   }

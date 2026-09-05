@@ -2,7 +2,7 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, sessionName } from "../src/config.ts";
+import { isLocalEndpoint, loadConfig, sessionName } from "../src/config.ts";
 
 let dir = "";
 const savedDir = process.env.HONCHO_CONFIG_DIR;
@@ -68,6 +68,19 @@ test("globalOverride applies flat fields across hosts", () => {
     hosts: { codex: { workspace: "ignored" } },
   });
   expect(loadConfig()!.workspace).toBe("flat-ws");
+});
+
+test("recognizes the built-in local endpoint", () => {
+  writeConfig({ apiKey: "k", peerName: "testuser", endpoint: { environment: "local" } });
+  expect(isLocalEndpoint(loadConfig()!)).toBe(true);
+});
+
+test("recognizes loopback custom endpoints but not production", () => {
+  writeConfig({ apiKey: "k", peerName: "testuser", endpoint: { baseUrl: "http://127.0.0.1:8000" } });
+  expect(isLocalEndpoint(loadConfig()!)).toBe(true);
+
+  writeConfig({ apiKey: "k", peerName: "testuser", endpoint: { baseUrl: "https://api.honcho.dev" } });
+  expect(isLocalEndpoint(loadConfig()!)).toBe(false);
 });
 
 test("session name is the slugged directory, no peer prefix", () => {
