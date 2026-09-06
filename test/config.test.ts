@@ -82,10 +82,10 @@ test("explicit session override wins", () => {
   expect(sessionName(cfg, "/repo/x")).toBe("pinned-session");
 });
 
-test("chat-instance strategy appends a short Codex session id", () => {
+test("chat-instance strategy preserves the complete Codex session id", () => {
   writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { sessionStrategy: "chat-instance" } } });
   const cfg = loadConfig()!;
-  expect(sessionName(cfg, "/repo/my-app", "019ea7df-805e-76d1-af52")).toBe("my-app-019ea7df");
+  expect(sessionName(cfg, "/repo/my-app", "019ea7df-805e-76d1-af52")).toBe("my-app-019ea7df-805e-76d1-af52");
   // No session id → falls back to the directory.
   expect(sessionName(cfg, "/repo/my-app")).toBe("my-app");
 });
@@ -106,4 +106,14 @@ test("git-branch falls back to directory outside a repo", () => {
   const cfg = loadConfig()!;
   const plain = mkdtempSync(join(tmpdir(), "codex-honcho-plain-"));
   expect(sessionName(cfg, plain)).toBe(basename(plain).toLowerCase().replace(/[^a-z0-9-_]/g, "-"));
+});
+
+
+test("chat instances sharing a timestamp prefix remain separate", () => {
+  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { sessionStrategy: "chat-instance" } } });
+  const cfg = loadConfig()!;
+  const first = "00000000-0000-4000-8000-000000000001";
+  const second = "00000000-0000-4000-8000-000000000002";
+  expect(sessionName(cfg, "/repo/my-app", first)).not.toBe(sessionName(cfg, "/repo/my-app", second));
+  expect(sessionName(cfg, "/repo/my-app", first)).toBe(`my-app-${first}`);
 });

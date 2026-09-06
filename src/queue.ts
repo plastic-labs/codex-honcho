@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, chmodSync } from "node:fs";
+import { redactSensitiveText } from "./redact.ts";
 
 // A durable, human-readable outbox. Capture hooks append here instantly (local,
 // no network) so everything recorded is visible live (`tail -f`); a background
@@ -32,16 +33,35 @@ function sentPath(key: string): string {
   return join(queueDir(), `${safe(key)}.sent`);
 }
 
+export function secureQueueStorage(): void {
+  const dir = queueDir();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // Tighten a directory created by an older release without inspecting or
+  // copying any queued content.
+  try { chmodSync(dir, 0o700); } catch {}
+}
+
+function secureFile(path: string): void {
+  // Tighten existing queue/sent files in place; do not rewrite their content.
+  try { chmodSync(path, 0o600); } catch {}
+}
+
 export function enqueue(key: string, entries: QueueEntry[]): void {
   if (entries.length === 0) return;
-  mkdirSync(queueDir(), { recursive: true });
-  appendFileSync(queuePath(key), entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  secureQueueStorage();
+  const safeEntries = entries.map((entry) => ({ ...entry, text: redactSensitiveText(entry.text) }));
+  const path = queuePath(key);
+  appendFileSync(path, safeEntries.map((e) => JSON.stringify(e)).join("\n") + "\n", { mode: 0o600 });
+  secureFile(path);
 }
 
 export function readQueue(key: string): QueueEntry[] {
+  const path = queuePath(key);
+  secureQueueStorage();
+  secureFile(path);
   let raw: string;
   try {
-    raw = readFileSync(queuePath(key), "utf-8");
+    raw = readFileSync(path, "utf-8");
   } catch {
     return [];
   }
@@ -59,8 +79,11 @@ export function readQueue(key: string): QueueEntry[] {
 }
 
 export function sentCount(key: string): number {
+  const path = sentPath(key);
+  secureQueueStorage();
+  secureFile(path);
   try {
-    const n = parseInt(readFileSync(sentPath(key), "utf-8").trim(), 10);
+    const n = parseInt(readFileSync(path, "utf-8").trim(), 10);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   } catch {
     return 0;
@@ -68,8 +91,10 @@ export function sentCount(key: string): number {
 }
 
 export function setSentCount(key: string, n: number): void {
-  mkdirSync(queueDir(), { recursive: true });
-  writeFileSync(sentPath(key), String(n));
+  secureQueueStorage();
+  const path = sentPath(key);
+  writeFileSync(path, String(n), { mode: 0o600 });
+  secureFile(path);
 }
 
 // Entries captured but not yet confirmed sent to Honcho.

@@ -1,8 +1,9 @@
 import { join } from "node:path";
-import { mkdirSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
+import { chmodSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
 import { loadConfig, sessionName, memoryKey } from "../config.ts";
 import { getSession } from "../memory.ts";
-import { readQueue, sentCount, setSentCount, queueDir, safe, type QueueEntry } from "../queue.ts";
+import { readQueue, sentCount, setSentCount, queueDir, safe, secureQueueStorage, type QueueEntry } from "../queue.ts";
+import { redactSensitiveText } from "../redact.ts";
 
 interface FlushInput {
   cwd?: string;
@@ -65,7 +66,10 @@ function messagesForEntry(
   aiPeer: SessionHandles["aiPeer"],
 ): PeerMessage[] {
   const peer = entry.role === "user" ? userPeer : aiPeer;
-  const body = entry.role === "tool" ? `[tool] ${entry.text}` : entry.text;
+  // Re-redact at the network boundary so queue files created by older versions
+  // cannot upload a credential after this version is installed.
+  const safeText = redactSensitiveText(entry.text);
+  const body = entry.role === "tool" ? `[tool] ${safeText}` : safeText;
   return chunkText(body).map((piece) =>
     peer.message(piece, {
       createdAt: entry.at,
@@ -79,8 +83,9 @@ function messagesForEntry(
 function acquireLock(key: string): boolean {
   const path = lockPath(key);
   try {
-    mkdirSync(queueDir(), { recursive: true });
-    writeFileSync(path, String(process.pid), { flag: "wx" });
+    secureQueueStorage();
+    writeFileSync(path, String(process.pid), { flag: "wx", mode: 0o600 });
+    try { chmodSync(path, 0o600); } catch {}
     return true;
   } catch {
     try {
@@ -89,7 +94,8 @@ function acquireLock(key: string): boolean {
       return false;
     } catch {
       try {
-        writeFileSync(path, String(process.pid));
+        writeFileSync(path, String(process.pid), { mode: 0o600 });
+        try { chmodSync(path, 0o600); } catch {}
         return true;
       } catch {
         return false;

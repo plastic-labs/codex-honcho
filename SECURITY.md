@@ -17,6 +17,26 @@ The integration sends your session content to the Honcho API for memory
 storage. Review [Honcho's privacy and security posture](https://honcho.dev)
 before connecting accounts that contain sensitive data.
 
+## Credential redaction
+
+When message capture is enabled, codex-honcho redacts common credential forms
+before writing them to the local queue and applies the same filter again before
+upload. This includes common provider token prefixes, authorization and cookie
+headers, JWTs, private-key PEM blocks, URL credentials, and values assigned to
+sensitive key names. Tool observations never retain raw commands, patches,
+paths, responses, or other tool arguments.
+
+The queue directory is forced to mode `0700`; queue, sent-marker, and lock files
+are forced to mode `0600`. Files created by earlier releases are tightened in
+place when they are read or updated, without copying their contents.
+
+Redaction is heuristic. It reduces accidental credential persistence but cannot
+recognize every proprietary or newly introduced secret format. Do not paste
+secrets into prompts, and review the local queue before enabling capture in an
+environment that handles credentials or regulated data. Previously queued
+entries remain unchanged on disk, although current releases redact them again
+at the upload boundary.
+
 ## Supported versions
 
 The latest published release on npm (`@honcho-ai/codex-honcho`) is supported.

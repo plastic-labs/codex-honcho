@@ -54,3 +54,16 @@ test("capture skips Codex-injected system turns", () => {
   expect(capture("s2", rollout)).toBe(1);
   expect(readQueue("s2").map((e) => e.text)).toEqual(["real prompt"]);
 });
+
+test("capture redacts secrets before writing the local queue", () => {
+  const secret = `hch-${"Qw7".repeat(8)}`;
+  writeRollout([
+    { role: "user", text: `Please use api_key=${secret} for this request` },
+    { role: "assistant", text: `I will not repeat ${secret}` },
+  ]);
+  expect(capture("s3", rollout)).toBe(2);
+  const queued = readQueue("s3").map((e) => e.text);
+  expect(queued.join("\n")).not.toContain(secret);
+  expect(queued[0]).toContain("Please use api_key=[REDACTED]");
+  expect(queued[1]).toContain("I will not repeat [REDACTED]");
+});

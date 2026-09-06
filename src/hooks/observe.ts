@@ -31,6 +31,8 @@ function shellCommand(input: Record<string, unknown>): string {
 }
 
 // Pure: a one-line observation for a tool call, or "" if not worth recording.
+// Tool arguments are inspected only to classify trivial calls; no raw command,
+// patch, path, response, or other tool payload is returned to the memory queue.
 export function summarizeTool(name: string, input: Record<string, unknown>): string {
   if (!name) return "";
 
@@ -42,13 +44,10 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
     const cmd = shellCommand(input).trim();
     if (!cmd) return "";
     if (TRIVIAL_SHELL.some((t) => cmd === t || cmd.startsWith(t + " "))) return "";
-    return `ran: ${cmd.slice(0, 120)}`;
+    return "ran a shell command";
   }
 
   if (name === "apply_patch") {
-    const patch = typeof input.input === "string" ? input.input : typeof input.patch === "string" ? input.patch : "";
-    const files = [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1]);
-    if (files.length) return `edited: ${files.slice(0, 5).join(", ")}`;
     return "applied a patch";
   }
 

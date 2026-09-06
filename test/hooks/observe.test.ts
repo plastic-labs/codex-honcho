@@ -2,11 +2,11 @@ import { test, expect } from "bun:test";
 import { summarizeTool } from "../../src/hooks/observe.ts";
 
 test("summarizes a shell command from an argv array", () => {
-  expect(summarizeTool("shell", { command: ["npm", "run", "build"] })).toBe("ran: npm run build");
+  expect(summarizeTool("shell", { command: ["npm", "run", "build"] })).toBe("ran a shell command");
 });
 
 test("summarizes a shell command from a string", () => {
-  expect(summarizeTool("local_shell", { command: "bun test" })).toBe("ran: bun test");
+  expect(summarizeTool("local_shell", { command: "bun test" })).toBe("ran a shell command");
 });
 
 test("drops trivial read-only shell commands", () => {
@@ -16,7 +16,7 @@ test("drops trivial read-only shell commands", () => {
 
 test("matches Codex's 'Bash' tool name (the flood bug) and filters read-only", () => {
   // Codex sends tool_name "Bash" — these must be summarized, not fall through.
-  expect(summarizeTool("Bash", { command: "npm run build" })).toBe("ran: npm run build");
+  expect(summarizeTool("Bash", { command: "npm run build" })).toBe("ran a shell command");
   // ...and read-only ones must be dropped, not recorded as "used Bash".
   expect(summarizeTool("Bash", { command: "grep -r foo src" })).toBe("");
   expect(summarizeTool("Bash", { command: "find . -name '*.ts'" })).toBe("");
@@ -25,12 +25,17 @@ test("matches Codex's 'Bash' tool name (the flood bug) and filters read-only", (
 
 test("trivial match respects word boundaries", () => {
   // "catalog" must not be skipped just because it starts with "cat".
-  expect(summarizeTool("Bash", { command: "catalog --build" })).toBe("ran: catalog --build");
+  expect(summarizeTool("Bash", { command: "catalog --build" })).toBe("ran a shell command");
 });
 
-test("extracts edited files from an apply_patch", () => {
+test("does not retain patch contents or edited paths", () => {
   const patch = "*** Begin Patch\n*** Update File: src/a.ts\n+x\n*** Add File: src/b.ts\n+y\n*** End Patch";
-  expect(summarizeTool("apply_patch", { input: patch })).toBe("edited: src/a.ts, src/b.ts");
+  expect(summarizeTool("apply_patch", { input: patch })).toBe("applied a patch");
+});
+
+test("does not retain secrets embedded in a shell command", () => {
+  const command = `deploy --token ghp_${"Ab3".repeat(10)}`;
+  expect(summarizeTool("Bash", { command })).toBe("ran a shell command");
 });
 
 test("falls back to a generic note for unknown tools", () => {

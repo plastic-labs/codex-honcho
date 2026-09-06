@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Redact common credential formats before durable queue writes and again before upload.
+- Stop retaining raw shell commands, patches, paths, responses, and tool arguments in tool observations.
+
 ## 0.1.1
 
 - Fixed uninstall/reinstall wiping foreign config parked inside the honcho comment fence: cleanup now removes only the marker lines and `[mcp_servers.honcho]` tables, preserving anything else Codex left there (e.g. `[hooks.state]`, tool-approval prefs).

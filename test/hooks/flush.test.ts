@@ -231,3 +231,17 @@ test("does not upload when saveMessages is disabled", async () => {
   expect(addCalls).toBe(0);
   expect(sentCount("s1")).toBe(0);
 });
+
+test("re-redacts legacy queue content at the network boundary", async () => {
+  const secret = `hch-${"Qw7".repeat(8)}`;
+  // Simulate an entry written by a pre-redaction release by bypassing enqueue.
+  const queueFile = join(dir, "codex", "queue", "s1.jsonl");
+  const { mkdirSync } = await import("node:fs");
+  mkdirSync(join(dir, "codex", "queue"), { recursive: true });
+  writeFileSync(queueFile, JSON.stringify({ role: "user", text: `apiKey=${secret}` }) + "\n");
+
+  await runFlush();
+  const uploaded = batches.flat().map((message) => message.text).join("\n");
+  expect(uploaded).not.toContain(secret);
+  expect(uploaded).toContain("apiKey=[REDACTED]");
+});

@@ -164,7 +164,7 @@ function slug(s: string): string {
 // derived per strategy:
 //   per-directory  → <repo>                 (one session per project dir)
 //   git-branch     → <repo>-<branch>        (per branch; falls back to repo)
-//   chat-instance  → <repo>-<short id>      (one session per Codex conversation)
+//   chat-instance  → <repo>-<full id>      (one session per Codex conversation)
 // No peer prefix — the workspace already isolates a user's data.
 export function sessionName(config: Config, cwd: string, sessionId?: string): string {
   const override = config.sessions?.[cwd];
@@ -177,7 +177,7 @@ export function sessionName(config: Config, cwd: string, sessionId?: string): st
       return branch ? `${repo}-${slug(branch)}` : repo;
     }
     case "chat-instance":
-      return sessionId ? `${repo}-${slug(sessionId).slice(0, 8)}` : repo;
+      return sessionId ? `${repo}-${slug(sessionId)}` : repo;
     case "per-directory":
     default:
       return repo;

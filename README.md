@@ -18,6 +18,7 @@ Give Codex long-term memory that survives context resets, session restarts, and 
 - **Git Awareness** — Optionally scope memory per branch, so feature work keeps its own context
 - **Flexible Sessions** — Map memory per directory, per git branch, or per chat instance
 - **Local-First Capture** — Conversations are queued to disk instantly and uploaded in the background — capture never blocks your turn or hits the network mid-conversation
+- **Credential Redaction** — Common token, auth header, cookie, JWT, private-key, URL credential, and sensitive key/value forms are redacted before queueing and again before upload
 - **Cross-Tool Context** — Shares `~/.honcho/config.json` with other Honcho integrations (Claude Code, Cursor, …), so context can follow you between tools
 
 ## Prerequisites
@@ -162,6 +163,12 @@ The plugin hooks into Codex's lifecycle events:
 - **PostToolUse** (`observe`) — appends a one-line note for significant tool calls to the local queue
 - **Stop / PreCompact** (`writeback`) — captures the new transcript tail, then flushes the queue to Honcho
 
+Redaction is a defense-in-depth heuristic, not a guarantee that every secret
+format will be recognized. Tool memory stores only generic activity labels and
+never raw commands, patches, paths, responses, or arguments. Avoid pasting
+credentials into chat and review the local queue before enabling capture for
+sensitive environments; see [SECURITY.md](./SECURITY.md).
+
 Capture is **local-first**: hooks only ever append to a plain JSONL queue, so they're instant and never touch the network. The flush is lock-guarded and advances a per-chunk sent marker, so a failed or partial upload simply stays queued and retries on the next turn. Inspect the local queue any time with `tail -f ~/.honcho/codex/queue/*.jsonl`, and run `codex-honcho status` to see the pending depth plus a deep link to your session in the Honcho GUI to confirm what landed server-side.
 
 ## Troubleshooting
@@ -224,3 +231,7 @@ MIT — see [LICENSE](LICENSE)
 - **Discord**: [Join the community](https://discord.gg/plasticlabs)
 - **X**: [@honchodotdev](https://x.com/honchodotdev)
 - **Plastic Labs**: [plasticlabs.ai](https://plasticlabs.ai)
+
+### Chat-instance identity
+
+Chat-instance sessions preserve the full Codex session identifier. Truncating timestamp-based IDs can merge independent conversations started close together. Existing shortened sessions remain available in Honcho; new writes use the full identifier.
