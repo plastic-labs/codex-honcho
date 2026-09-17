@@ -1,5 +1,6 @@
 import { loadConfig, memoryKey } from "../config.ts";
 import { enqueue } from "../queue.ts";
+import { readLatestDioneSource } from "../transcript/codex.ts";
 
 interface ObserveInput {
   tool_name?: string;
@@ -7,6 +8,9 @@ interface ObserveInput {
   tool_response?: unknown;
   cwd?: string;
   session_id?: string;
+  transcript_path?: string;
+  tool_call_id?: string;
+  tool_use_id?: string;
 }
 
 // Read-only/inspection commands carry no memory signal — skip them so a single
@@ -64,8 +68,22 @@ export async function observe(input: ObserveInput): Promise<string> {
 
   const summary = summarizeTool(input.tool_name ?? "", input.tool_input ?? {});
   if (!summary) return "";
+  // A tool call has no author/channel fields of its own. Derive its scope only
+  // from the authenticated rollout. Without a readable transcript, fail closed
+  // and omit the observation rather than leak channel activity into the base
+  // direct-user session.
+  if (!input.transcript_path) return "";
+  const source = readLatestDioneSource(input.transcript_path);
+  if (!source) return "";
 
   const cwd = input.cwd || process.cwd();
-  enqueue(memoryKey(config, cwd, input.session_id), [{ role: "tool", text: summary, at: new Date().toISOString() }]);
+  const toolId = input.tool_call_id || input.tool_use_id;
+  enqueue(memoryKey(config, cwd, input.session_id), [{
+    role: "tool",
+    text: summary,
+    at: new Date().toISOString(),
+    scopeId: source.channelId,
+    ...(toolId ? { receiptId: `codex:tool:${input.session_id || "session"}:${toolId}` } : {}),
+  }]);
   return "";
 }

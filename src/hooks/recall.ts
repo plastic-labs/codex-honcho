@@ -21,6 +21,11 @@ const TOOL_HINT =
 export async function recall(input: RecallInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled) return "";
+  // SessionStart has no authenticated Dione channel provenance. Injecting the
+  // base operator peer here would disclose that context to every room served
+  // by the same Codex thread. Scoped recall must happen only after routing.
+  // The tool hint carries no peer context and remains safe to surface.
+  if (config.dioneRouting) return TOOL_HINT;
 
   const cwd = input.cwd || process.cwd();
   const name = sessionName(config, cwd, input.session_id);

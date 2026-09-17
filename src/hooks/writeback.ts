@@ -1,8 +1,13 @@
 import { loadConfig, memoryKey } from "../config.ts";
-import { readRollout } from "../transcript/codex.ts";
+import { readRolloutRecords } from "../transcript/codex.ts";
 import { readCursor, writeCursor, selectNewTurns } from "../cursor.ts";
 import { enqueue } from "../queue.ts";
 import { flush } from "./flush.ts";
+import { createHash } from "node:crypto";
+import {
+  type DionePeerRegistry,
+  resolveDionePeerId,
+} from "../dione-peers.ts";
 
 interface WritebackInput {
   session_id?: string;
@@ -12,13 +17,53 @@ interface WritebackInput {
 
 // Pure-local: pull the rollout turns not yet captured into the queue and
 // advance the rollout cursor. No network — returns how many were enqueued.
-export function capture(key: string, rolloutPath: string): number {
-  const turns = readRollout(rolloutPath);
-  const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key));
+function turnReceipt(key: string, recordId: string): string {
+  const digest = createHash("sha256")
+    .update(recordId)
+    .digest("hex")
+    .slice(0, 16);
+  return `codex:${key}:record:${digest}`;
+}
+
+export function capture(
+  key: string,
+  rolloutPath: string,
+  dionePeers: Record<string, string> = {},
+  dioneRouting = false,
+  dionePeerRegistry: DionePeerRegistry = {},
+): number {
+  const turns = readRolloutRecords(rolloutPath);
+  const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key, turns));
   if (fresh.length === 0) return 0;
-  enqueue(key, fresh.map((t) => ({ role: t.role, text: t.text, at: t.at })));
+  const freshIds = new Set(fresh.map((turn) => turn.recordId));
+  let activeScope: string | undefined;
+  const entries = turns.flatMap((t, index) => {
+    if (t.role === "user") activeScope = t.source?.channelId;
+    if (!freshIds.has(t.recordId)) return [];
+    if (t.persist === false) return [];
+    if (dioneRouting && t.role === "assistant" && !activeScope) {
+      console.warn(
+        `[codex-honcho] suppressed unscoped assistant record ${t.recordId} while Dione routing is active`,
+      );
+      return [];
+    }
+    return [{
+      role: t.role,
+      text: t.text,
+      at: t.at,
+      receiptId: t.source
+        ? `dione:message:${t.source.channelId}:${t.source.messageId}`
+        : turnReceipt(key, t.recordId),
+      ...(activeScope ? { scopeId: activeScope } : {}),
+      ...(t.source ? {
+        peerId: resolveDionePeerId(t.source.userId, dionePeers, dionePeerRegistry),
+        source: t.source,
+      } : {}),
+    }];
+  });
+  enqueue(key, entries);
   writeCursor(key, nextCursor);
-  return fresh.length;
+  return entries.length;
 }
 
 // Stop / PreCompact (turn-scoped): capture this turn's new rollout tail into
@@ -32,7 +77,13 @@ export async function writeback(input: WritebackInput): Promise<string> {
   if (!input.transcript_path) return "";
 
   const cwd = input.cwd || process.cwd();
-  capture(memoryKey(config, cwd, input.session_id), input.transcript_path);
+  capture(
+    memoryKey(config, cwd, input.session_id),
+    input.transcript_path,
+    config.dionePeers,
+    config.dioneRouting,
+    config.dionePeerRegistry,
+  );
   await flush({ cwd, session_id: input.session_id });
   return "";
 }

@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { enqueue, readQueue, pending, pendingCount, sentCount, setSentCount } from "../src/queue.ts";
@@ -46,4 +46,18 @@ test("empty enqueue is a no-op", () => {
 test("missing queue reads as empty", () => {
   expect(readQueue("nope")).toEqual([]);
   expect(pendingCount("nope")).toBe(0);
+});
+
+test("legacy integer-only sent marker survives upgrade", () => {
+  const queueDir = join(process.env.HONCHO_CONFIG_DIR!, "codex", "queue");
+  mkdirSync(queueDir, { recursive: true });
+  writeFileSync(join(queueDir, "k.sent"), "2");
+  enqueue("k", [
+    { role: "user", text: "already sent 1" },
+    { role: "assistant", text: "already sent 2" },
+    { role: "user", text: "pending" },
+  ]);
+
+  expect(sentCount("k")).toBe(2);
+  expect(pending("k").map((entry) => entry.text)).toEqual(["pending"]);
 });

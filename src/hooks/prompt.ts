@@ -16,6 +16,9 @@ const TRIVIAL = /^(y|n|yes|no|ok|okay|sure|thanks|yep|nope|continue|go ahead|do 
 export async function prompt(input: PromptInput): Promise<string> {
   const config = loadConfig();
   if (!config || !config.enabled || !config.injectPerPrompt) return "";
+  // UserPromptSubmit likewise lacks a trusted channel scope. Never serve the
+  // unscoped cache while authenticated Dione routing is active.
+  if (config.dioneRouting) return "";
 
   const text = (input.prompt ?? "").trim();
   if (!text || TRIVIAL.test(text)) return "";

@@ -8,7 +8,12 @@ async function sessionAndPeers(config: Config, name: string) {
     honcho.peer(config.peerName),
     honcho.peer(config.aiPeer),
   ]);
-  return { session, userPeer, aiPeer };
+  return {
+    session,
+    userPeer,
+    aiPeer,
+    peerFor: (peerId: string) => honcho.peer(peerId),
+  };
 }
 
 // Deliberate session creation — run once at SessionStart. addPeers materializes

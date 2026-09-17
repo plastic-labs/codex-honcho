@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { prompt } from "../../src/hooks/prompt.ts";
+import { writeContext } from "../../src/cache.ts";
 
 let dir = "";
 const savedDir = process.env.HONCHO_CONFIG_DIR;
@@ -36,5 +37,16 @@ test("returns nothing for a trivial prompt even when injection is on", async () 
 test("returns nothing when enabled but there is no cached context (no network)", async () => {
   writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { injectPerPrompt: true } } });
   const out = await prompt({ prompt: "tell me about the project", cwd: "/tmp/x", session_id: "no-cache" });
+  expect(out).toBe("");
+});
+
+test("Dione routing forbids unscoped per-prompt injection", async () => {
+  writeConfig({
+    apiKey: "k",
+    peerName: "testuser",
+    hosts: { codex: { injectPerPrompt: true, dioneRouting: true } },
+  });
+  writeContext("s1", "private cached context", ["private peer card"]);
+  const out = await prompt({ prompt: "tell me private context", cwd: "/tmp/x", session_id: "s1" });
   expect(out).toBe("");
 });
