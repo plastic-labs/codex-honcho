@@ -27,11 +27,11 @@ export function capture(key: string, rolloutPath: string): number {
 // already responded, so this brief upload doesn't lag the visible turn — and
 // it drains any observations queued during the turn too.
 export async function writeback(input: WritebackInput): Promise<string> {
-  const config = loadConfig();
+  const cwd = input.cwd || process.cwd();
+  const config = loadConfig(cwd);
   if (!config || !config.enabled || !config.saveMessages) return "";
   if (!input.transcript_path) return "";
 
-  const cwd = input.cwd || process.cwd();
   capture(memoryKey(config, cwd, input.session_id), input.transcript_path);
   await flush({ cwd, session_id: input.session_id });
   return "";

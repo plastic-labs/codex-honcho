@@ -109,10 +109,10 @@ function releaseLock(key: string): void {
 // Background worker: drain pending queue entries to Honcho, in order, and
 // advance the sent marker only on success so failures retry next time.
 export async function flush(input: FlushInput): Promise<string> {
-  const config = loadConfig();
+  const cwd = input.cwd || process.cwd();
+  const config = loadConfig(cwd);
   if (!config || !config.enabled || !config.saveMessages) return "";
 
-  const cwd = input.cwd || process.cwd();
   const name = sessionName(config, cwd, input.session_id);
   const key = memoryKey(config, cwd, input.session_id);
 

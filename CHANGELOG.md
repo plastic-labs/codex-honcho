@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add read-only repo-local `.honcho/config.json` overlays with nearest-ancestor discovery, global-field inheritance, project-root session anchoring, optional pinned session names, and optional nested git-repository splitting.
+- Run the Honcho MCP as a credential-free local stdio server so hooks and active-recall tools use the same repo-local endpoint, workspace, and identity.
+- Namespace local queue, cursor, and context keys by workspace to prevent messages captured before an override from crossing memory scopes.
+- Add the Hermes-compatible `per-repo` session strategy: all directories in a Git repository share the Git root's session name, with a per-directory fallback outside Git.
+
 ## 0.1.1
 
 - Fixed uninstall/reinstall wiping foreign config parked inside the honcho comment fence: cleanup now removes only the marker lines and `[mcp_servers.honcho]` tables, preserving anything else Codex left there (e.g. `[hooks.state]`, tool-approval prefs).

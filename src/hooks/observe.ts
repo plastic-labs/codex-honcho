@@ -59,13 +59,13 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
 // only — instant, no network. The next writeback (Stop) flushes it along with
 // the turn, so frequent tool calls never trigger an upload of their own.
 export async function observe(input: ObserveInput): Promise<string> {
-  const config = loadConfig();
+  const cwd = input.cwd || process.cwd();
+  const config = loadConfig(cwd);
   if (!config || !config.enabled || !config.saveMessages) return "";
 
   const summary = summarizeTool(input.tool_name ?? "", input.tool_input ?? {});
   if (!summary) return "";
 
-  const cwd = input.cwd || process.cwd();
   enqueue(memoryKey(config, cwd, input.session_id), [{ role: "tool", text: summary, at: new Date().toISOString() }]);
   return "";
 }
