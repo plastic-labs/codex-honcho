@@ -147,7 +147,9 @@ test("tool entries get a [tool] prefix and type metadata; user/assistant route t
   expect(msgs[0]).toMatchObject({ peer: "user", text: "do the thing", opts: { createdAt: "2026-06-09T00:00:00Z" } });
   expect(msgs[1]).toMatchObject({ peer: "ai", text: "[tool] ran: bun test", opts: { metadata: { type: "tool" } } });
   expect(msgs[2]).toMatchObject({ peer: "ai", text: "done" });
-  expect(msgs[0].opts?.metadata).toBeUndefined();
+  expect(msgs[0].opts?.metadata).toMatchObject({ source: "codex" });
+  expect(msgs[1].opts?.metadata).toMatchObject({ source: "codex", type: "tool" });
+  expect(msgs[2].opts?.metadata).toMatchObject({ source: "codex" });
 });
 
 test("splits an oversized message into parts instead of dropping the tail", async () => {
