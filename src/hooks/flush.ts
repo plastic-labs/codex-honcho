@@ -69,7 +69,10 @@ function messagesForEntry(
   return chunkText(body).map((piece) =>
     peer.message(piece, {
       createdAt: entry.at,
-      ...(entry.role === "tool" ? { metadata: { type: "tool" } } : {}),
+      metadata: {
+        source: "codex",
+        ...(entry.role === "tool" ? { type: "tool" } : {}),
+      },
     }),
   );
 }
