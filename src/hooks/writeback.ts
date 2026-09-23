@@ -2,6 +2,7 @@ import { loadConfig, memoryKey } from "../config.ts";
 import { readRollout } from "../transcript/codex.ts";
 import { readCursor, writeCursor, selectNewTurns } from "../cursor.ts";
 import { enqueue } from "../queue.ts";
+import { loadPolicy, shouldDrop, capTurn } from "../policy.ts";
 import { flush } from "./flush.ts";
 
 interface WritebackInput {
@@ -12,13 +13,23 @@ interface WritebackInput {
 
 // Pure-local: pull the rollout turns not yet captured into the queue and
 // advance the rollout cursor. No network — returns how many were enqueued.
+// When an ingestion policy is configured, turns it forbids are dropped and long
+// turns are capped before enqueue; the cursor still advances past dropped turns
+// so they are never re-examined. With no policy present this is a no-op filter
+// and behaviour matches the historical default.
 export function capture(key: string, rolloutPath: string): number {
   const turns = readRollout(rolloutPath);
   const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key));
   if (fresh.length === 0) return 0;
-  enqueue(key, fresh.map((t) => ({ role: t.role, text: t.text, at: t.at })));
+
+  const policy = loadPolicy();
+  const kept = fresh
+    .filter((t) => !shouldDrop(t.text, policy))
+    .map((t) => ({ role: t.role, text: capTurn(t.text, policy), at: t.at }));
+
+  if (kept.length > 0) enqueue(key, kept);
   writeCursor(key, nextCursor);
-  return fresh.length;
+  return kept.length;
 }
 
 // Stop / PreCompact (turn-scoped): capture this turn's new rollout tail into
