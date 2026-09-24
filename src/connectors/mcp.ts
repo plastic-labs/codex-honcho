@@ -109,6 +109,16 @@ export function hasMcpServer(content: string): boolean {
   return content.includes(BLOCK_START);
 }
 
+// The hosted MCP server only serves data held by the hosted API. For a
+// self-hosted endpoint it cannot see the user's data, and registering it would
+// send the self-hosted API key to mcp.honcho.dev. Returns the reason to skip
+// registration, or null when registration is appropriate.
+export function hostedMcpSkipReason(opts: { hostedApi: boolean; noMcpFlag: boolean }): string | null {
+  if (opts.noMcpFlag) return "--no-mcp was given";
+  if (!opts.hostedApi) return "the configured endpoint is self-hosted, and the hosted MCP server (mcp.honcho.dev) cannot reach its data";
+  return null;
+}
+
 export function installMcpServer(id: McpIdentity, configPath: string = DEFAULT_CONFIG_PATH): void {
   mkdirSync(dirname(configPath), { recursive: true });
   const existing = existsSync(configPath) ? readFileSync(configPath, "utf-8") : "";

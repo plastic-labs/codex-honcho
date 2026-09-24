@@ -76,6 +76,12 @@ export function resolvePeerName(filePeer?: string): string {
   return filePeer || process.env.HONCHO_PEER_NAME || process.env.USER || process.env.USERNAME || "user";
 }
 
+// The configured endpoint (host override, then root). Needs no API key, so
+// install can classify the endpoint even when no key resolves.
+export function resolveEndpoint(raw: FileConfig = readFile()): Config["endpoint"] {
+  return raw.hosts?.[HOST]?.endpoint ?? raw.endpoint;
+}
+
 // Returns null when there's no API key — callers exit quietly in that case.
 export function loadConfig(): Config | null {
   const raw = readFile();
@@ -103,7 +109,7 @@ export function loadConfig(): Config | null {
     reasoningLevel: host?.reasoningLevel ?? raw.reasoningLevel ?? "low",
     injectPerPrompt: (host?.injectPerPrompt ?? raw.injectPerPrompt) === true,
     sessionStrategy: host?.sessionStrategy ?? raw.sessionStrategy ?? "per-directory",
-    endpoint: host?.endpoint ?? raw.endpoint,
+    endpoint: resolveEndpoint(raw),
     sessions: raw.sessions,
   };
 }
@@ -139,11 +145,17 @@ export function saveConfig(patch: { apiKey?: string; peerName?: string }): strin
   return path;
 }
 
-function baseUrl(config: Config): string {
+function baseUrl(config: Pick<Config, "endpoint">): string {
   const ep = config.endpoint;
   if (ep?.baseUrl) return ep.baseUrl.endsWith("/v3") ? ep.baseUrl : `${ep.baseUrl}/v3`;
   if (ep?.environment === "local") return BASE_URLS.local;
   return BASE_URLS.production;
+}
+
+// True when the resolved API endpoint is the hosted Honcho API. A self-hosted
+// endpoint (endpoint.baseUrl or environment "local") returns false.
+export function usesHostedApi(config: Pick<Config, "endpoint">): boolean {
+  return baseUrl(config) === BASE_URLS.production;
 }
 
 export function honchoClientOptions(config: Config) {

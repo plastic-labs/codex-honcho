@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { setMcpServer, clearMcpServer, hasMcpServer, HONCHO_MCP_URL } from "../../src/connectors/mcp.ts";
+import { setMcpServer, clearMcpServer, hasMcpServer, hostedMcpSkipReason, HONCHO_MCP_URL } from "../../src/connectors/mcp.ts";
 
 const id = { apiKey: "hch-secret", userName: "testuser", workspaceId: "codex", assistantName: "codex" };
 
@@ -55,4 +55,14 @@ test("clear on a file without our block is a harmless passthrough", () => {
   const base = "model = \"o3\"\n";
   expect(hasMcpServer(clearMcpServer(base))).toBe(false);
   expect(clearMcpServer(base)).toContain("model");
+});
+
+test("hostedMcpSkipReason registers the hosted server only for the hosted API", () => {
+  expect(hostedMcpSkipReason({ hostedApi: true, noMcpFlag: false })).toBeNull();
+  expect(hostedMcpSkipReason({ hostedApi: false, noMcpFlag: false })).toContain("self-hosted");
+});
+
+test("hostedMcpSkipReason honors --no-mcp even for the hosted API", () => {
+  expect(hostedMcpSkipReason({ hostedApi: true, noMcpFlag: true })).toContain("--no-mcp");
+  expect(hostedMcpSkipReason({ hostedApi: false, noMcpFlag: true })).toContain("--no-mcp");
 });
