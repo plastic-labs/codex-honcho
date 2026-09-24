@@ -16,18 +16,31 @@ function cursorPath(sessionId: string): string {
   return join(cursorDir(), `${safe}.json`);
 }
 
-export function readCursor(sessionId: string): number {
+// Version 2 counts turns under per-block injected-context filtering. A cursor
+// without it was counted by an older filter and must be migrated before use.
+export const CURSOR_VERSION = 2;
+
+export interface CursorState {
+  count: number;
+  legacy: boolean;
+}
+
+export function readCursorState(sessionId: string): CursorState {
   try {
-    const { count } = JSON.parse(readFileSync(cursorPath(sessionId), "utf-8"));
-    return typeof count === "number" && count >= 0 ? count : 0;
+    const { version, count } = JSON.parse(readFileSync(cursorPath(sessionId), "utf-8"));
+    return { count: typeof count === "number" && count >= 0 ? count : 0, legacy: version !== CURSOR_VERSION };
   } catch {
-    return 0;
+    return { count: 0, legacy: false };
   }
+}
+
+export function readCursor(sessionId: string): number {
+  return readCursorState(sessionId).count;
 }
 
 export function writeCursor(sessionId: string, count: number): void {
   mkdirSync(cursorDir(), { recursive: true });
-  writeFileSync(cursorPath(sessionId), JSON.stringify({ count, at: new Date().toISOString() }));
+  writeFileSync(cursorPath(sessionId), JSON.stringify({ version: CURSOR_VERSION, count, at: new Date().toISOString() }));
 }
 
 export interface Delta {

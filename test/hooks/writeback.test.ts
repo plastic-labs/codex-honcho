@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { capture } from "../../src/hooks/writeback.ts";
@@ -53,4 +53,30 @@ test("capture skips Codex-injected system turns", () => {
   ]);
   expect(capture("s2", rollout)).toBe(1);
   expect(readQueue("s2").map((e) => e.text)).toEqual(["real prompt"]);
+});
+
+test("capture skips the AGENTS.md instructions turn Codex injects as a user message", () => {
+  writeRollout([
+    { role: "user", text: "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nrules\n</INSTRUCTIONS>" },
+    { role: "user", text: "<codex_internal_context>\n<objective>goal</objective>\n</codex_internal_context>" },
+    { role: "user", text: "real prompt" },
+  ]);
+  expect(capture("s3", rollout)).toBe(1);
+  expect(readQueue("s3").map((e) => e.text)).toEqual(["real prompt"]);
+});
+
+test("a cursor written before per-block filtering is migrated, not reused as an index", () => {
+  // An older build kept the AGENTS.md turn, so its cursor of 3 covers [AGENTS.md, first, reply].
+  writeRollout([
+    { role: "user", text: "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nrules\n</INSTRUCTIONS>" },
+    { role: "user", text: "first" },
+    { role: "assistant", text: "reply" },
+    { role: "user", text: "second" },
+    { role: "assistant", text: "second reply" },
+  ]);
+  const cursors = join(process.env.HONCHO_CONFIG_DIR!, "codex", "cursors");
+  mkdirSync(cursors, { recursive: true });
+  writeFileSync(join(cursors, "s4.json"), JSON.stringify({ count: 3, at: "2026-09-01T00:00:00.000Z" }));
+  expect(capture("s4", rollout)).toBe(2);
+  expect(readQueue("s4").map((e) => e.text)).toEqual(["second", "second reply"]);
 });
