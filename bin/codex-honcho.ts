@@ -10,9 +10,9 @@ import {
   DEFAULT_HOOKS_PATH,
   DEFAULT_CONFIG_PATH,
 } from "../src/connectors/codex.ts";
-import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
+import { installMcpServer, removeMcpServer, hostedMcpSkipReason, type McpIdentity } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
-import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName, sessionName, honchoSessionUrl } from "../src/config.ts";
+import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName, sessionName, honchoSessionUrl, usesHostedApi, resolveEndpoint, type Config } from "../src/config.ts";
 import { pendingCount } from "../src/queue.ts";
 
 const command = process.argv[2] ?? "";
@@ -50,8 +50,7 @@ async function runHook(verb: string): Promise<void> {
   }
 }
 
-function mcpIdentity(): McpIdentity | null {
-  const config = loadConfig();
+function mcpIdentity(config: Config | null = loadConfig()): McpIdentity | null {
   if (!config) return null;
   return {
     apiKey: config.apiKey,
@@ -116,8 +115,19 @@ switch (command) {
     console.log(`Installed Codex hooks → ${DEFAULT_HOOKS_PATH}`);
     console.log(`Enabled [features].hooks → ${DEFAULT_CONFIG_PATH}`);
     console.log(`Installed memory skill → ${installSkill()}`);
-    const id = mcpIdentity();
-    if (id) {
+    const config = loadConfig();
+    const id = mcpIdentity(config);
+    const hostedApi = usesHostedApi({ endpoint: config ? config.endpoint : resolveEndpoint() });
+    const skipReason = hostedMcpSkipReason({
+      hostedApi,
+      noMcpFlag: process.argv.slice(3).includes("--no-mcp"),
+    });
+    if (skipReason) {
+      // A self-hosted endpoint can't use a hosted block left by an earlier install
+      // (e.g. before the endpoint changed), and that block holds an API key. Clear it.
+      const cleared = !hostedApi && removeMcpServer();
+      console.log(`Skipped MCP registration — ${skipReason}.${cleared ? ` Removed the existing hosted MCP entry from ${DEFAULT_CONFIG_PATH}.` : ""}`);
+    } else if (id) {
       installMcpServer(id);
       console.log(`Registered Honcho MCP (mcp.honcho.dev) → ${DEFAULT_CONFIG_PATH}`);
     } else {

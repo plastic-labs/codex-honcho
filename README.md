@@ -99,6 +99,7 @@ Once installed, Codex can call these Honcho tools directly:
 | Command                  | Effect                                            |
 | ------------------------ | ------------------------------------------------- |
 | `codex-honcho install`   | Install hooks + MCP + skill                        |
+| `codex-honcho install --no-mcp` | Install hooks + skill, skip the MCP server |
 | `codex-honcho status`    | Installed components, pending queue depth, GUI link |
 | `codex-honcho remove`    | Strip only what this installs                       |
 
@@ -178,7 +179,7 @@ Capture is **local-first**: hooks only ever append to a plain JSONL queue, so th
 |---|---|
 | `~/.codex/honcho/` | staged copy of the bundle the hooks run (kept stable across npm/npx cache eviction) |
 | `~/.codex/hooks.json` | adds the four hook entries (merged; your own hooks untouched) |
-| `~/.codex/config.toml` | sets `[features].hooks = true`; registers `[mcp_servers.honcho]` → `mcp.honcho.dev` (native HTTP) |
+| `~/.codex/config.toml` | sets `[features].hooks = true`; registers `[mcp_servers.honcho]` → `mcp.honcho.dev` (native HTTP). Skipped for a self-hosted endpoint or with `--no-mcp` |
 | `~/.codex/skills/honcho-memory/` | the active-recall skill |
 | `~/.honcho/config.json` | persists the resolved `apiKey` + `peerName` (other fields and `hosts.*` blocks preserved) |
 

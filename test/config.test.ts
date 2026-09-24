@@ -2,7 +2,7 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, sessionName } from "../src/config.ts";
+import { loadConfig, sessionName, usesHostedApi, resolveEndpoint } from "../src/config.ts";
 
 let dir = "";
 const savedDir = process.env.HONCHO_CONFIG_DIR;
@@ -106,4 +106,21 @@ test("git-branch falls back to directory outside a repo", () => {
   const cfg = loadConfig()!;
   const plain = mkdtempSync(join(tmpdir(), "codex-honcho-plain-"));
   expect(sessionName(cfg, plain)).toBe(basename(plain).toLowerCase().replace(/[^a-z0-9-_]/g, "-"));
+});
+
+test("usesHostedApi is true only when the endpoint resolves to the hosted API", () => {
+  expect(usesHostedApi({})).toBe(true);
+  expect(usesHostedApi({ endpoint: { environment: "production" } })).toBe(true);
+  expect(usesHostedApi({ endpoint: { baseUrl: "https://api.honcho.dev" } })).toBe(true);
+  expect(usesHostedApi({ endpoint: { environment: "local" } })).toBe(false);
+  expect(usesHostedApi({ endpoint: { baseUrl: "http://localhost:8000" } })).toBe(false);
+  expect(usesHostedApi({ endpoint: { baseUrl: "https://honcho.internal.example/v3" } })).toBe(false);
+});
+
+test("resolveEndpoint reads the endpoint without an API key, host override first", () => {
+  writeConfig({ endpoint: { baseUrl: "http://localhost:8000" } });
+  expect(loadConfig()).toBeNull();
+  expect(resolveEndpoint()).toEqual({ baseUrl: "http://localhost:8000" });
+  writeConfig({ endpoint: { baseUrl: "http://root" }, hosts: { codex: { endpoint: { environment: "local" } } } });
+  expect(resolveEndpoint()).toEqual({ environment: "local" });
 });

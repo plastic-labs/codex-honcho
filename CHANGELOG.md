@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `install` no longer registers the hosted MCP server (`mcp.honcho.dev`) when the configured endpoint is self-hosted (`endpoint.baseUrl` or `environment: "local"`). The hosted server cannot reach self-hosted data, and registering it sent the self-hosted API key to `mcp.honcho.dev`. Re-running `install` removes a hosted MCP entry left by an earlier install.
+- `install --no-mcp` skips MCP registration for any endpoint. It does not remove an existing entry.
+
 ## 0.1.1
 
 - Fixed uninstall/reinstall wiping foreign config parked inside the honcho comment fence: cleanup now removes only the marker lines and `[mcp_servers.honcho]` tables, preserving anything else Codex left there (e.g. `[hooks.state]`, tool-approval prefs).
