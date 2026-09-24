@@ -13,8 +13,8 @@ const MAX_CONCLUSIONS = 8;
 // Injected once at session start so the model actively queries memory through
 // the Honcho MCP tools rather than leaning on heavy per-turn injection.
 const TOOL_HINT =
-  "Honcho memory tools are available via MCP — call honcho search / get_peer_context to recall facts " +
-  "across sessions, and honcho chat for questions about the user's history. Prefer querying over guessing.";
+  "Honcho memory tools are available via MCP — call search / get_context to recall facts " +
+  "across sessions, and chat for questions about the user's history. Prefer querying over guessing.";
 
 // SessionStart: materialize the session and surface a lean snapshot of what we
 // know, plus a nudge to use the MCP tools for anything deeper.
