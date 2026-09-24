@@ -1,6 +1,6 @@
 import { loadConfig, memoryKey } from "../config.ts";
-import { readRollout } from "../transcript/codex.ts";
-import { readCursor, writeCursor, selectNewTurns } from "../cursor.ts";
+import { migrateLegacyCursor, readRollout } from "../transcript/codex.ts";
+import { readCursorState, writeCursor, selectNewTurns } from "../cursor.ts";
 import { enqueue } from "../queue.ts";
 import { flush } from "./flush.ts";
 
@@ -14,7 +14,9 @@ interface WritebackInput {
 // advance the rollout cursor. No network — returns how many were enqueued.
 export function capture(key: string, rolloutPath: string): number {
   const turns = readRollout(rolloutPath);
-  const { fresh, nextCursor } = selectNewTurns(turns, readCursor(key));
+  const state = readCursorState(key);
+  const cursor = state.legacy && state.count > 0 ? migrateLegacyCursor(rolloutPath, state.count) : state.count;
+  const { fresh, nextCursor } = selectNewTurns(turns, cursor);
   if (fresh.length === 0) return 0;
   enqueue(key, fresh.map((t) => ({ role: t.role, text: t.text, at: t.at })));
   writeCursor(key, nextCursor);

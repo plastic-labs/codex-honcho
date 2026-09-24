@@ -130,3 +130,10 @@ test("drops the project-doc turn when Codex omits ' for <cwd>' from the heading 
   ]);
   expect(readRollout(path).map((t) => t.text)).toEqual(["# AGENTS.md instructions are unclear to me, can you explain?"]);
 });
+
+test("keeps a user block whose own heading merely ends in 'instructions'", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "# My instructions\n<INSTRUCTIONS>\nkeep me\n</INSTRUCTIONS>" }] } },
+  ]);
+  expect(readRollout(path)).toHaveLength(1);
+});

@@ -50,9 +50,19 @@ const CODEX_SYSTEM_TAGS = [
 ];
 
 // Project docs arrive as a markdown heading followed by an <INSTRUCTIONS> block
-// ("# AGENTS.md instructions for <cwd>", or without " for <cwd>" in some builds),
-// not as a tag. Requiring the block keeps a user's own "# ..." heading intact.
-const PROJECT_DOC_TURN = /^# \S+ instructions\b[^\n]*\n+<INSTRUCTIONS>/;
+// ("# AGENTS.md instructions for <cwd>", or without " for <cwd>" when only a
+// global AGENTS.md applies), not as a tag. Matching the exact heading and the
+// block keeps a user's own "# ... instructions" text intact.
+const PROJECT_DOC_TURN = /^# AGENTS\.md instructions(?: for [^\n]+)?\n+<INSTRUCTIONS>/;
+
+// The filter before per-block checks: tags matched only at the start of the
+// joined message text. Kept solely to migrate cursors counted under it.
+const LEGACY_CODEX_SYSTEM_TAGS = CODEX_SYSTEM_TAGS.slice(0, 7);
+
+function isLegacyInjectedTurn(text: string): boolean {
+  const t = text.trimStart();
+  return LEGACY_CODEX_SYSTEM_TAGS.some((tag) => t.startsWith(`<${tag}>`) || t.startsWith(`<${tag} `));
+}
 
 function isInjectedSystemTurn(text: string): boolean {
   const t = text.trimStart();
@@ -93,6 +103,26 @@ function* events(path: string): Generator<RolloutEvent> {
       // Skip malformed lines rather than failing the whole read.
     }
   }
+}
+
+// Map a cursor counted under the legacy filter onto the current one. The
+// legacy count marks a position in the rollout (just after its last counted
+// turn); the migrated cursor is the number of current turns before that
+// position, so nothing already sent is re-sent and nothing after it is skipped.
+export function migrateLegacyCursor(path: string, legacyCount: number): number {
+  let legacy = 0;
+  let current = 0;
+  for (const event of events(path)) {
+    if (legacy >= legacyCount) break;
+    if (event.type !== "response_item") continue;
+    const payload = event.payload;
+    if (!payload || payload.type !== "message") continue;
+    if (payload.role !== "user" && payload.role !== "assistant") continue;
+    if (collectText(payload.content, payload.role === "user")) current += 1;
+    const joined = collectText(payload.content);
+    if (joined && !(payload.role === "user" && isLegacyInjectedTurn(joined))) legacy += 1;
+  }
+  return current;
 }
 
 // Read the full conversation, in order, dropping tool/reasoning/system noise.
