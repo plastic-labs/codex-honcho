@@ -54,3 +54,13 @@ test("capture skips Codex-injected system turns", () => {
   expect(capture("s2", rollout)).toBe(1);
   expect(readQueue("s2").map((e) => e.text)).toEqual(["real prompt"]);
 });
+
+test("capture skips the AGENTS.md instructions turn Codex injects as a user message", () => {
+  writeRollout([
+    { role: "user", text: "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nrules\n</INSTRUCTIONS>" },
+    { role: "user", text: "<codex_internal_context>\n<objective>goal</objective>\n</codex_internal_context>" },
+    { role: "user", text: "real prompt" },
+  ]);
+  expect(capture("s3", rollout)).toBe(1);
+  expect(readQueue("s3").map((e) => e.text)).toEqual(["real prompt"]);
+});

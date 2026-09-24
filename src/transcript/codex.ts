@@ -34,8 +34,8 @@ interface RolloutEvent {
 const TEXT_BLOCK_TYPES = new Set(["input_text", "output_text", "text"]);
 
 // Codex injects its own context as user-role messages (environment, instruction
-// blobs, abort markers). These aren't things the user said, so they're dropped
-// from what we persist to Honcho.
+// blobs, goal context, plugin lists, subagent notices, abort markers). These
+// aren't things the user said, so they're dropped from what we persist to Honcho.
 const CODEX_SYSTEM_TAGS = [
   "environment_context",
   "turn_aborted",
@@ -44,19 +44,35 @@ const CODEX_SYSTEM_TAGS = [
   "plugins_instructions",
   "skills_instructions",
   "collaboration_mode",
+  "codex_internal_context",
+  "recommended_plugins",
+  "subagent_notification",
 ];
+
+// Project docs arrive as a markdown heading followed by an <INSTRUCTIONS> block
+// ("# AGENTS.md instructions for <cwd>", or without " for <cwd>" in some builds),
+// not as a tag. Requiring the block keeps a user's own "# ..." heading intact.
+const PROJECT_DOC_TURN = /^# \S+ instructions\b[^\n]*\n+<INSTRUCTIONS>/;
 
 function isInjectedSystemTurn(text: string): boolean {
   const t = text.trimStart();
-  return CODEX_SYSTEM_TAGS.some((tag) => t.startsWith(`<${tag}>`) || t.startsWith(`<${tag} `));
+  return (
+    CODEX_SYSTEM_TAGS.some((tag) => t.startsWith(`<${tag}>`) || t.startsWith(`<${tag} `)) ||
+    PROJECT_DOC_TURN.test(t)
+  );
 }
 
-function collectText(content: string | ContentBlock[] | undefined): string {
-  if (typeof content === "string") return content.trim();
+// Codex bundles several injected blocks into one message (AGENTS.md +
+// environment_context, recommended_plugins + both), so user turns are filtered
+// per block: injected blocks drop, the user's own blocks survive.
+function collectText(content: string | ContentBlock[] | undefined, dropInjected = false): string {
+  const keep = (text: string) => !(dropInjected && isInjectedSystemTurn(text));
+  if (typeof content === "string") return keep(content) ? content.trim() : "";
   if (!Array.isArray(content)) return "";
   return content
     .filter((b) => b.type && TEXT_BLOCK_TYPES.has(b.type) && typeof b.text === "string")
     .map((b) => b.text as string)
+    .filter(keep)
     .join("\n")
     .trim();
 }
@@ -88,9 +104,8 @@ export function readRollout(path: string): Turn[] {
     if (!payload || payload.type !== "message") continue;
     if (payload.role !== "user" && payload.role !== "assistant") continue;
 
-    const text = collectText(payload.content);
+    const text = collectText(payload.content, payload.role === "user");
     if (!text) continue;
-    if (payload.role === "user" && isInjectedSystemTurn(text)) continue;
 
     turns.push({ role: payload.role, text, at: event.timestamp });
   }

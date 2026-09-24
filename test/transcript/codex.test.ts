@@ -80,3 +80,53 @@ test("skips malformed lines without throwing", () => {
   expect(turns).toHaveLength(1);
   expect(turns[0].text).toBe("hi");
 });
+
+// Shapes observed in real Codex 0.144–0.156 rollouts: the project-doc turn is a
+// markdown-headed block (not a tag) that Codex bundles with environment_context
+// (and, in exec/subagent threads, behind recommended_plugins) in ONE message.
+const AGENTS_BLOCK = "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nalways run tests\n</INSTRUCTIONS>";
+const ENV_BLOCK = "<environment_context>\n  <cwd>/repo</cwd>\n</environment_context>";
+
+test("drops the AGENTS.md instructions turn, alone or bundled with environment_context", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: AGENTS_BLOCK }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: AGENTS_BLOCK }, { type: "input_text", text: ENV_BLOCK }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<recommended_plugins>\nx\n</recommended_plugins>" }, { type: "input_text", text: AGENTS_BLOCK }, { type: "input_text", text: ENV_BLOCK }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "actual question from me" }] } },
+  ]);
+  const turns = readRollout(path);
+  expect(turns.map((t) => t.text)).toEqual(["actual question from me"]);
+});
+
+test("drops goal context and subagent notifications Codex injects as user turns", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<codex_internal_context>\n<objective>ship it</objective>\n</codex_internal_context>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<subagent_notification>\n{\"agent\":\"worker\"}\n</subagent_notification>" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: "<recommended_plugins>\nx\n</recommended_plugins>" } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "real prompt" }] } },
+  ]);
+  expect(readRollout(path).map((t) => t.text)).toEqual(["real prompt"]);
+});
+
+test("filters injected blocks per block, keeping the user's own text in the same message", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "keep this" }, { type: "input_text", text: ENV_BLOCK }] } },
+  ]);
+  expect(readRollout(path).map((t) => t.text)).toEqual(["keep this"]);
+});
+
+test("keeps user text that merely mentions an injected marker mid-message", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "why does <environment_context> or # AGENTS.md instructions for appear?" }] } },
+    { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "# AGENTS.md instructions for x — quoting is fine in replies" }] } },
+  ]);
+  expect(readRollout(path)).toHaveLength(2);
+});
+
+test("drops the project-doc turn when Codex omits ' for <cwd>' from the heading (seen in 0.153.4)", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nrules\n</INSTRUCTIONS>" }, { type: "input_text", text: ENV_BLOCK }] } },
+    { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "# AGENTS.md instructions are unclear to me, can you explain?" }] } },
+  ]);
+  expect(readRollout(path).map((t) => t.text)).toEqual(["# AGENTS.md instructions are unclear to me, can you explain?"]);
+});
