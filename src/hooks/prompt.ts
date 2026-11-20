@@ -1,5 +1,5 @@
-import { loadConfig, sessionName, memoryKey } from "../config.ts";
-import { renderContext } from "../memory.ts";
+import { loadConfig, memoryKey } from "../config.ts";
+import { renderContext, retrieveRelevantContext } from "../memory.ts";
 import { readContext, lastInjected, markInjected } from "../cache.ts";
 
 interface PromptInput {
@@ -10,15 +10,19 @@ interface PromptInput {
 
 const TRIVIAL = /^(y|n|yes|no|ok|okay|sure|thanks|yep|nope|continue|go ahead|do it|proceed)\.?$/i;
 
-// UserPromptSubmit: off by default — session-start context plus the MCP tools
-// cover recall without taxing every turn. When injectPerPrompt is enabled,
-// serve the cached snapshot (no network) and never repeat the same block.
+// UserPromptSubmit is off by default. Cached mode skips the network, and search
+// mode looks up memories related to the prompt.
 export async function prompt(input: PromptInput): Promise<string> {
   const config = loadConfig();
-  if (!config || !config.enabled || !config.injectPerPrompt) return "";
+  if (!config || !config.enabled || config.injectPerPrompt === "off") return "";
 
   const text = (input.prompt ?? "").trim();
   if (!text || TRIVIAL.test(text)) return "";
+
+  if (config.injectPerPrompt === "search") {
+    const context = await retrieveRelevantContext(config, text);
+    return renderContext(context, config.peerName, 5);
+  }
 
   const cwd = input.cwd || process.cwd();
   const key = memoryKey(config, cwd, input.session_id);
