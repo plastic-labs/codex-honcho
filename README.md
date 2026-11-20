@@ -114,7 +114,7 @@ All settings live in `~/.honcho/config.json` (shared with other Honcho integrati
     "codex": {
       "workspace": "codex",          // Honcho workspace for Codex memory
       "sessionStrategy": "per-directory",
-      "injectPerPrompt": false,      // false, true (cached), or "relevant" (search)
+      "injectPerPrompt": "off",      // "off", "cached", or "search"
       "saveMessages": true           // false = read memory but never write
     }
   }
@@ -123,12 +123,18 @@ All settings live in `~/.honcho/config.json` (shared with other Honcho integrati
 
 ### Prompt recall
 
-By default, Honcho supplies a small profile at session start and is available
-through MCP when the agent needs more context. Set `hosts.codex.injectPerPrompt`
-to `true` to allow cached context on later prompts, or to `"relevant"` to search
-the configured workspace for memories related to each substantive prompt.
+Honcho supplies a small profile at session start and is available through MCP
+when the agent needs more context. Set `hosts.codex.injectPerPrompt` to one of
+these values:
 
-In relevant mode, the hook sends up to the first 2,000 characters of the prompt
+- `"off"` (default) skips prompt recall.
+- `"cached"` reuses the session-start cache when it has new context to supply.
+- `"search"` searches for memories related to the current prompt.
+
+Older configurations with `true` use `"cached"` and those with `false` use `"off"`.
+Unknown values fall back to `"off"`.
+
+In search mode, the hook sends up to the first 2,000 characters of the prompt
 to the configured Honcho API, searches the Codex observer's view of the user,
 and returns up to five entries, including up to three inferred patterns. The
 request has a five-second timeout. A failed or empty lookup adds no context.

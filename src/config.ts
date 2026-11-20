@@ -4,7 +4,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from "n
 import { currentBranch } from "./git.ts";
 
 export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
-type PromptInjection = boolean | "relevant";
+type PromptInjection = "off" | "cached" | "search";
 
 // codex-honcho shares the ~/.honcho/config.json file with the other Honcho
 // integrations. Codex-specific settings live under hosts.codex; root fields
@@ -31,7 +31,7 @@ interface HostBlock {
   enabled?: boolean;
   saveMessages?: boolean;
   reasoningLevel?: string;
-  injectPerPrompt?: PromptInjection;
+  injectPerPrompt?: unknown;
   sessionStrategy?: SessionStrategy;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
 }
@@ -51,8 +51,6 @@ export interface Config {
   enabled: boolean;
   saveMessages: boolean;
   reasoningLevel: string;
-  // false skips prompt injection, true uses the cache, and "relevant" searches
-  // Honcho using the current prompt.
   injectPerPrompt: PromptInjection;
   // How Honcho session names are derived (default per-directory).
   sessionStrategy: SessionStrategy;
@@ -68,6 +66,13 @@ function readFile(): FileConfig {
   } catch {
     return {};
   }
+}
+
+function parsePromptInjection(value: unknown): PromptInjection {
+  if (value === "search") return "search";
+  // Older releases used true to opt into cached prompt context.
+  if (value === "cached" || value === true) return "cached";
+  return "off";
 }
 
 // Resolve the peer name: an explicit file value wins, else env, else OS user.
@@ -93,7 +98,6 @@ export function loadConfig(): Config | null {
   const aiPeer = raw.globalOverride
     ? raw.aiPeer ?? HOST
     : host?.aiPeer ?? raw.aiPeer ?? HOST;
-  const injectPerPrompt = host?.injectPerPrompt ?? raw.injectPerPrompt;
 
   return {
     apiKey,
@@ -103,7 +107,7 @@ export function loadConfig(): Config | null {
     enabled: (host?.enabled ?? raw.enabled) !== false,
     saveMessages: (host?.saveMessages ?? raw.saveMessages) !== false,
     reasoningLevel: host?.reasoningLevel ?? raw.reasoningLevel ?? "low",
-    injectPerPrompt: injectPerPrompt === "relevant" ? "relevant" : injectPerPrompt === true,
+    injectPerPrompt: parsePromptInjection(host?.injectPerPrompt ?? raw.injectPerPrompt),
     sessionStrategy: host?.sessionStrategy ?? raw.sessionStrategy ?? "per-directory",
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,

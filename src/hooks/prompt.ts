@@ -10,16 +10,16 @@ interface PromptInput {
 
 const TRIVIAL = /^(y|n|yes|no|ok|okay|sure|thanks|yep|nope|continue|go ahead|do it|proceed)\.?$/i;
 
-// UserPromptSubmit is off by default. Boolean opt-in keeps the original cached
-// behavior; semantic recall is a separate opt-in.
+// UserPromptSubmit is off by default. Cached mode skips the network, and search
+// mode looks up memories related to the prompt.
 export async function prompt(input: PromptInput): Promise<string> {
   const config = loadConfig();
-  if (!config || !config.enabled || !config.injectPerPrompt) return "";
+  if (!config || !config.enabled || config.injectPerPrompt === "off") return "";
 
   const text = (input.prompt ?? "").trim();
   if (!text || TRIVIAL.test(text)) return "";
 
-  if (config.injectPerPrompt === "relevant") {
+  if (config.injectPerPrompt === "search") {
     const context = await retrieveRelevantContext(config, text);
     return renderContext(context, config.peerName, 5);
   }

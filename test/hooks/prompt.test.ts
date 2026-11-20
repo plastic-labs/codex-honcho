@@ -31,12 +31,12 @@ test("returns nothing when per-prompt injection is off (default) — no network"
 });
 
 test("returns nothing for a trivial prompt even when injection is on", async () => {
-  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { injectPerPrompt: true } } });
+  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { injectPerPrompt: "cached" } } });
   expect(await prompt({ prompt: "ok", cwd: "/tmp/x", session_id: "s1" })).toBe("");
 });
 
 test("returns nothing when enabled but there is no cached context (no network)", async () => {
-  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { injectPerPrompt: true } } });
+  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { injectPerPrompt: "cached" } } });
   const out = await prompt({ prompt: "tell me about the project", cwd: "/tmp/x", session_id: "no-cache" });
   expect(out).toBe("");
 });
@@ -59,7 +59,7 @@ test("keeps an inference below the first five lines without treating its sources
   expect(context).not.toContain("Example from a prior conversation");
 });
 
-test("relevant mode requests the observer's context using the prompt and skips the peer card", async () => {
+test("search mode requests the observer's context using the prompt and skips the peer card", async () => {
   const requests: Array<{ method: string; url: string }> = [];
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -74,7 +74,7 @@ test("relevant mode requests the observer's context using the prompt and skips t
     writeConfig({
       apiKey: "k",
       peerName: "testuser",
-      hosts: { codex: { injectPerPrompt: "relevant", workspace: "memory", aiPeer: "assistant", endpoint: { baseUrl: server.url.origin } } },
+      hosts: { codex: { injectPerPrompt: "search", workspace: "memory", aiPeer: "assistant", endpoint: { baseUrl: server.url.origin } } },
     });
     const submit = (text: string) => dispatch("prompt", JSON.stringify({ prompt: text }));
     expect(await submit("ok")).toBe("");

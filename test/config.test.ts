@@ -50,6 +50,21 @@ test("defaults workspace and aiPeer to 'codex'", () => {
   const cfg = loadConfig()!;
   expect(cfg.workspace).toBe("codex");
   expect(cfg.aiPeer).toBe("codex");
+  expect(cfg.injectPerPrompt).toBe("off");
+});
+
+test.each([
+  ["off", "off"],
+  ["cached", "cached"],
+  ["search", "search"],
+  [true, "cached"],
+  [false, "off"],
+  ["true", "off"],
+  ["false", "off"],
+  ["unknown", "off"],
+] as const)("normalizes prompt injection %p to %s", (setting, mode) => {
+  writeConfig({ apiKey: "k", injectPerPrompt: "search", hosts: { codex: { injectPerPrompt: setting } } });
+  expect(loadConfig()!.injectPerPrompt).toBe(mode);
 });
 
 test("env API key overrides the file", () => {
