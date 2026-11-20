@@ -38,30 +38,28 @@ interface HooksFile {
 // How each verb maps onto a Codex event. Stop is turn-scoped (Codex has no
 // SessionEnd), so writeback runs every turn and ships only the new tail.
 function hookGroupsFor(invoke: (verb: HookVerb) => string): Record<string, HookGroup[]> {
-  // Only SessionStart carries a status label; the per-turn hooks run silently
-  // (and detached) to avoid spamming the UI every prompt and tool call.
   return {
     SessionStart: [
       {
         // Includes `compact` so memory is re-surfaced after a context reset.
         matcher: "startup|resume|clear|compact",
-        hooks: [{ type: "command", command: invoke("recall"), timeout: 30, statusMessage: "honcho" }],
+        hooks: [{ type: "command", command: invoke("recall"), timeout: 30, statusMessage: "Load Honcho session memory" }],
       },
     ],
     UserPromptSubmit: [
       {
-        hooks: [{ type: "command", command: invoke("prompt"), timeout: 20 }],
+        hooks: [{ type: "command", command: invoke("prompt"), timeout: 20, statusMessage: "Recall Honcho memory for the prompt" }],
       },
     ],
     PostToolUse: [
       {
         matcher: "*",
-        hooks: [{ type: "command", command: invoke("observe"), timeout: 10 }],
+        hooks: [{ type: "command", command: invoke("observe"), timeout: 10, statusMessage: "Record tool activity for Honcho" }],
       },
     ],
     Stop: [
       {
-        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30 }],
+        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30, statusMessage: "Save the turn to Honcho" }],
       },
     ],
     // Flush the conversation before compaction discards it; the cursor keeps
@@ -69,7 +67,7 @@ function hookGroupsFor(invoke: (verb: HookVerb) => string): Record<string, HookG
     PreCompact: [
       {
         matcher: "manual|auto",
-        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30 }],
+        hooks: [{ type: "command", command: invoke("writeback"), timeout: 30, statusMessage: "Save context to Honcho before compaction" }],
       },
     ],
   };

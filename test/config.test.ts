@@ -1,8 +1,8 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, sessionName } from "../src/config.ts";
+import { getPromptInjection, loadConfig, sessionName, setPromptInjection } from "../src/config.ts";
 
 let dir = "";
 const savedDir = process.env.HONCHO_CONFIG_DIR;
@@ -65,6 +65,30 @@ test.each([
 ] as const)("normalizes prompt injection %p to %s", (setting, mode) => {
   writeConfig({ apiKey: "k", injectPerPrompt: "search", hosts: { codex: { injectPerPrompt: setting } } });
   expect(loadConfig()!.injectPerPrompt).toBe(mode);
+});
+
+test("changes the Codex prompt recall mode while preserving shared settings", () => {
+  const existing = {
+    injectPerPrompt: true,
+    peerName: "testuser",
+    hosts: { claude_code: { injectPerPrompt: true }, codex: { workspace: "custom" } },
+  };
+  writeConfig(existing);
+  expect(getPromptInjection()).toBe("cached");
+  const path = setPromptInjection("off");
+  expect(getPromptInjection()).toBe("off");
+  expect(JSON.parse(readFileSync(path, "utf-8"))).toEqual({
+    ...existing,
+    hosts: { ...existing.hosts, codex: { workspace: "custom", injectPerPrompt: "off" } },
+  });
+});
+
+test("preserves malformed config when setting prompt recall fails", () => {
+  const path = join(dir, "config.json");
+  const contents = "{ invalid JSON";
+  writeFileSync(path, contents);
+  expect(() => setPromptInjection("search")).toThrow("Cannot read Honcho settings");
+  expect(readFileSync(path, "utf-8")).toBe(contents);
 });
 
 test("env API key overrides the file", () => {

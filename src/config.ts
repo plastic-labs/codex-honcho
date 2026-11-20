@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join, basename, dirname } from "node:path";
-import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { currentBranch } from "./git.ts";
 
 export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
@@ -8,9 +9,8 @@ type PromptInjection = "off" | "cached" | "search";
 
 // codex-honcho shares the ~/.honcho/config.json file with the other Honcho
 // integrations. Codex-specific settings live under hosts.codex; root fields
-// are the fallback. At runtime we only read it; `install` is the one writer —
-// it persists the resolved API key + peer name here (merging, never clobbering
-// other integrations' settings) so the shared file is the source of truth.
+// are the fallback. Hooks only read it. Explicit setup commands update it
+// while preserving the other integrations' settings.
 
 const HOST = "codex";
 
@@ -58,21 +58,51 @@ export interface Config {
   sessions?: Record<string, string>;
 }
 
-function readFile(): FileConfig {
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readFile(strict = false): FileConfig {
   const path = configPath();
   if (!existsSync(path)) return {};
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as FileConfig;
+    const raw: unknown = JSON.parse(readFileSync(path, "utf-8"));
+    if (!isObject(raw)) throw new Error("Expected a JSON object");
+    if (strict && raw.hosts !== undefined
+      && (!isObject(raw.hosts) || (raw.hosts[HOST] !== undefined && !isObject(raw.hosts[HOST])))) {
+      throw new Error("Expected hosts and hosts.codex to be objects");
+    }
+    return raw as FileConfig;
   } catch {
+    if (strict) throw new Error(`Cannot read Honcho settings. Check the JSON in ${path}.`);
     return {};
   }
 }
 
+export function isPromptInjection(value: unknown): value is PromptInjection {
+  return value === "off" || value === "cached" || value === "search";
+}
+
 function parsePromptInjection(value: unknown): PromptInjection {
-  if (value === "search") return "search";
+  if (isPromptInjection(value)) return value;
   // Older releases used true to opt into cached prompt context.
-  if (value === "cached" || value === true) return "cached";
-  return "off";
+  return value === true ? "cached" : "off";
+}
+
+function configuredPromptInjection(raw: FileConfig): PromptInjection {
+  return parsePromptInjection(raw.hosts?.[HOST]?.injectPerPrompt ?? raw.injectPerPrompt);
+}
+
+export function getPromptInjection(): PromptInjection {
+  return configuredPromptInjection(readFile(true));
+}
+
+export function setPromptInjection(mode: PromptInjection): string {
+  const raw = readFile(true);
+  raw.hosts ??= {};
+  raw.hosts[HOST] ??= {};
+  raw.hosts[HOST].injectPerPrompt = mode;
+  return writeConfig(raw);
 }
 
 // Resolve the peer name: an explicit file value wins, else env, else OS user.
@@ -107,7 +137,7 @@ export function loadConfig(): Config | null {
     enabled: (host?.enabled ?? raw.enabled) !== false,
     saveMessages: (host?.saveMessages ?? raw.saveMessages) !== false,
     reasoningLevel: host?.reasoningLevel ?? raw.reasoningLevel ?? "low",
-    injectPerPrompt: parsePromptInjection(host?.injectPerPrompt ?? raw.injectPerPrompt),
+    injectPerPrompt: configuredPromptInjection(raw),
     sessionStrategy: host?.sessionStrategy ?? raw.sessionStrategy ?? "per-directory",
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,
@@ -133,15 +163,23 @@ export function saveConfig(patch: { apiKey?: string; peerName?: string }): strin
   const raw = readFile();
   if (patch.apiKey) raw.apiKey = patch.apiKey;
   if (patch.peerName) raw.peerName = patch.peerName;
+  return writeConfig(raw);
+}
 
-  // The file holds the API key, so keep it user-only. mode on mkdir/write only
-  // applies when they create the target; chmod then enforces 0600 even if the
-  // file already existed with looser perms. (We don't re-chmod the shared
-  // ~/.honcho dir — the honcho CLI owns it and intentionally creates it 0755.)
+function writeConfig(raw: FileConfig): string {
+  // Write a private temporary file before replacing the shared config so hooks
+  // cannot read an incomplete update.
   const path = configPath();
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, JSON.stringify(raw, null, 2) + "\n", { mode: 0o600 });
-  chmodSync(path, 0o600);
+  const target = existsSync(path) ? realpathSync(path) : path;
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  const temp = `${target}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temp, JSON.stringify(raw, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+    chmodSync(temp, 0o600);
+    renameSync(temp, target);
+  } finally {
+    rmSync(temp, { force: true });
+  }
   return path;
 }
 

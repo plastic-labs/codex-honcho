@@ -12,7 +12,10 @@ import {
 } from "../src/connectors/codex.ts";
 import { installMcpServer, removeMcpServer, type McpIdentity } from "../src/connectors/mcp.ts";
 import { installSkill, removeSkill, hasSkill } from "../src/connectors/skill.ts";
-import { loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName, sessionName, honchoSessionUrl } from "../src/config.ts";
+import {
+  loadConfig, memoryKey, currentIdentity, saveConfig, resolvePeerName,
+  sessionName, honchoSessionUrl, getPromptInjection, isPromptInjection, setPromptInjection,
+} from "../src/config.ts";
 import { pendingCount } from "../src/queue.ts";
 
 const command = process.argv[2] ?? "";
@@ -137,12 +140,28 @@ switch (command) {
     console.log(hooksGone || mcpGone || skillGone || stagedGone ? "Removed codex-honcho hooks, MCP registration, and skill." : "No codex-honcho install found.");
     break;
   }
+  case "prompt-recall": {
+    const mode = process.argv[3];
+    if ((mode !== undefined && !isPromptInjection(mode)) || process.argv.length > 4) {
+      console.error("Usage: codex-honcho prompt-recall [off|cached|search]");
+      process.exit(1);
+    }
+    try {
+      if (mode !== undefined) setPromptInjection(mode);
+      console.log(`Honcho prompt recall: ${mode ?? getPromptInjection()}`);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+    break;
+  }
   case "status": {
     console.log(hasCodexHooks() ? "codex-honcho hooks: installed" : "codex-honcho hooks: not installed");
     console.log(hasSkill() ? "memory skill: installed" : "memory skill: not installed");
     const cfg = loadConfig();
     console.log(cfg ? "honcho config: found" : "honcho config: missing (run `honcho init`)");
     if (cfg) {
+      console.log(`Honcho prompt recall: ${cfg.injectPerPrompt}`);
       const key = memoryKey(cfg, process.cwd());
       console.log(`queue (${key}): ${pendingCount(key)} pending upload`);
       // Deep link to inspect what actually landed server-side. We have no live

@@ -1,6 +1,6 @@
 ---
 name: honcho-memory
-description: Persistent cross-session memory via Honcho — recall what you know about the user before working, and save durable insights after.
+description: Recall and save cross-session memories with Honcho, or check and change Honcho prompt recall settings in Codex.
 license: MIT
 ---
 
@@ -9,6 +9,20 @@ license: MIT
 Honcho stores memory across sessions. The codex-honcho hooks provide a short
 profile at session start and record the conversation by default. Prompt recall
 is optional. Use MCP to look up details when the supplied context is incomplete.
+
+## Configure prompt recall
+
+When asked about the setting, run `codex-honcho prompt-recall` to show the
+current mode. If the executable is unavailable on PATH, use
+`node <codex-home>/honcho/codex-honcho.mjs prompt-recall` with the absolute
+path to the staged installer bundle (Codex home defaults to `~/.codex`).
+If neither command is available or the installed version does not support
+`prompt-recall`, point the user to the current installer before changing config.
+
+Offer `off` (session-start memory and MCP only), `cached` (local cached memory
+on prompts), and `search` (look up memory using up to 2,000 characters of
+the prompt in the configured Honcho service). To change it, run the same
+command with the user's chosen mode as the argument and report the result.
 
 ## When to pull memory
 

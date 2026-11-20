@@ -100,11 +100,12 @@ Once installed, Codex can call these Honcho tools directly:
 | ------------------------ | ------------------------------------------------- |
 | `codex-honcho install`   | Install hooks + MCP + skill                        |
 | `codex-honcho status`    | Installed components, pending queue depth, GUI link |
+| `codex-honcho prompt-recall [off\|cached\|search]` | Show or change prompt recall |
 | `codex-honcho remove`    | Strip only what this installs                       |
 
 ## Configuration
 
-All settings live in `~/.honcho/config.json` (shared with other Honcho integrations). Codex-specific settings go under `hosts.codex`, falling back to the root fields. The hooks only ever read this file; `install` is the only writer.
+All settings live in `~/.honcho/config.json` (shared with other Honcho integrations). Codex-specific settings go under `hosts.codex`, falling back to the root fields. Hooks only read this file.
 
 ```jsonc
 {
@@ -124,8 +125,11 @@ All settings live in `~/.honcho/config.json` (shared with other Honcho integrati
 ### Prompt recall
 
 Honcho supplies a small profile at session start and is available through MCP
-when the agent needs more context. Set `hosts.codex.injectPerPrompt` to one of
-these values:
+when the agent needs more context. Ask Codex **“Show me my Honcho prompt recall
+setting”** or **“Set Honcho prompt recall to search.”** The bundled skill can
+use the installed command to make the change. From a terminal, run
+`codex-honcho prompt-recall` to show the mode, or append `off`, `cached`, or
+`search` to change it. The command updates `hosts.codex.injectPerPrompt`.
 
 - `"off"` (default) skips prompt recall.
 - `"cached"` reuses the session-start cache when it has new context to supply.

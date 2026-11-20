@@ -18,11 +18,14 @@ function readJson(path: string) {
   return JSON.parse(readFileSync(path, "utf-8"));
 }
 
-test("install writes our hook events", () => {
+test("install writes distinct display labels for all Honcho hook events", () => {
   const { hooks, config } = tmp();
   installCodexHooks({ hooksPath: hooks, configPath: config });
   const file = readJson(hooks);
   expect(Object.keys(file.hooks).sort()).toEqual(["PostToolUse", "PreCompact", "SessionStart", "Stop", "UserPromptSubmit"]);
+  const labels = Object.keys(file.hooks).map(event => file.hooks[event][0].hooks[0].statusMessage);
+  expect(labels.every(label => typeof label === "string" && label.includes("Honcho"))).toBe(true);
+  expect(new Set(labels).size).toBe(labels.length);
   expect(file.hooks.Stop[0].hooks[0].command).toContain("writeback");
   expect(file.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
   // PreCompact reuses the writeback verb to flush before a context reset.

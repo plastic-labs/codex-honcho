@@ -35,7 +35,8 @@
     "composerIcon": "./assets/icon.svg",
     "defaultPrompt": [
       "What do you remember about me and what I'm working on?",
-      "Save this preference to memory so you remember it next session."
+      "Save this preference to memory so you remember it next session.",
+      "Show me my Honcho prompt recall setting and the available modes."
     ]
   }
 }
