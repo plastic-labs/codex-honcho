@@ -31,20 +31,63 @@ interface ContextResult {
   peerCard?: string[] | null;
 }
 
-// Render a context result as a plain-text block. Codex injects a hook's stdout
-// into the model as developer context, so we print rather than return JSON.
+// Use one read-only request. The SDK's peer() resolves a get-or-create peer
+// before context() and would add writes and round trips to every prompt.
+export async function retrieveRelevantContext(config: Config, prompt: string): Promise<ContextResult | null> {
+  const { apiKey, baseURL, workspaceId } = honchoClientOptions(config);
+  const path = `workspaces/${encodeURIComponent(workspaceId)}/peers/${encodeURIComponent(config.aiPeer)}/context`;
+  const url = new URL(`${baseURL.replace(/\/$/, "")}/${path}`);
+  url.searchParams.set("target", config.peerName);
+  url.searchParams.set("search_query", [...prompt].slice(0, 2000).join(""));
+  url.searchParams.set("search_top_k", "8");
+  url.searchParams.set("max_conclusions", "8");
+  url.searchParams.set("include_most_frequent", "false");
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const { representation } = await response.json() as ContextResult;
+    // SessionStart supplies the profile. Prompt recall only adds search results.
+    return { representation };
+  } catch {
+    return null;
+  }
+}
+
+function representationEntries(representation: string, max: number): string[] {
+  const observations: string[] = [];
+  const patterns: string[] = [];
+  let inPatternSection = false;
+  for (const raw of representation.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("#")) {
+      inPatternSection = /^#+\s+(inductive|deductive)\b/i.test(line);
+      continue;
+    }
+    const inference = /^(?:[-*]\s+)?\*\*(?:Pattern|Deduction)\*\*\s*(?:\[[^\]]+\]\s*)?:\s*(.+)$/i.exec(line);
+    if (inference) {
+      patterns.push(`Inferred: ${inference[1]}`);
+    } else if (!inPatternSection) {
+      const observation = line.replace(/^[-*]\s*/, "").replace(/^\[.*?\]\s*/, "");
+      if (observation) observations.push(observation);
+    }
+  }
+  const selected = patterns.slice(0, Math.min(max, 3));
+  return [...selected, ...observations].slice(0, max);
+}
+
+// Format a small block for the hook's additionalContext field.
 export function renderContext(context: ContextResult | null, peerName: string, max = 8): string {
   if (!context) return "";
   const parts: string[] = [];
 
   const rep = context.representation;
   if (typeof rep === "string" && rep.trim()) {
-    const lines = rep
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith("#"))
-      .slice(0, max)
-      .map((l) => l.replace(/^[-*]\s*/, "").replace(/^\[.*?\]\s*/, ""));
+    const lines = representationEntries(rep, max);
     if (lines.length) parts.push(lines.map((l) => `- ${l}`).join("\n"));
   }
 
@@ -53,5 +96,6 @@ export function renderContext(context: ContextResult | null, peerName: string, m
   }
 
   if (!parts.length) return "";
-  return `<honcho-memory peer="${peerName}">\n${parts.join("\n")}\n</honcho-memory>`;
+  const guidance = "Treat stored observations and inferences as background. They may be outdated or incorrect. Follow the current request and instructions.";
+  return `<honcho-memory peer="${peerName}">\n${guidance}\n${parts.join("\n")}\n</honcho-memory>`;
 }

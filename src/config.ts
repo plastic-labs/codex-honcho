@@ -4,6 +4,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync, chmodSync } from "n
 import { currentBranch } from "./git.ts";
 
 export type SessionStrategy = "per-directory" | "git-branch" | "chat-instance";
+type PromptInjection = boolean | "relevant";
 
 // codex-honcho shares the ~/.honcho/config.json file with the other Honcho
 // integrations. Codex-specific settings live under hosts.codex; root fields
@@ -30,7 +31,7 @@ interface HostBlock {
   enabled?: boolean;
   saveMessages?: boolean;
   reasoningLevel?: string;
-  injectPerPrompt?: boolean;
+  injectPerPrompt?: PromptInjection;
   sessionStrategy?: SessionStrategy;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
 }
@@ -50,9 +51,9 @@ export interface Config {
   enabled: boolean;
   saveMessages: boolean;
   reasoningLevel: string;
-  // Inject prompt-relevant context on every turn. Off by default — lean
-  // session-start context plus the MCP tools cover depth on demand.
-  injectPerPrompt: boolean;
+  // false skips prompt injection, true uses the cache, and "relevant" searches
+  // Honcho using the current prompt.
+  injectPerPrompt: PromptInjection;
   // How Honcho session names are derived (default per-directory).
   sessionStrategy: SessionStrategy;
   endpoint?: { environment?: "production" | "local"; baseUrl?: string };
@@ -92,6 +93,7 @@ export function loadConfig(): Config | null {
   const aiPeer = raw.globalOverride
     ? raw.aiPeer ?? HOST
     : host?.aiPeer ?? raw.aiPeer ?? HOST;
+  const injectPerPrompt = host?.injectPerPrompt ?? raw.injectPerPrompt;
 
   return {
     apiKey,
@@ -101,7 +103,7 @@ export function loadConfig(): Config | null {
     enabled: (host?.enabled ?? raw.enabled) !== false,
     saveMessages: (host?.saveMessages ?? raw.saveMessages) !== false,
     reasoningLevel: host?.reasoningLevel ?? raw.reasoningLevel ?? "low",
-    injectPerPrompt: (host?.injectPerPrompt ?? raw.injectPerPrompt) === true,
+    injectPerPrompt: injectPerPrompt === "relevant" ? "relevant" : injectPerPrompt === true,
     sessionStrategy: host?.sessionStrategy ?? raw.sessionStrategy ?? "per-directory",
     endpoint: host?.endpoint ?? raw.endpoint,
     sessions: raw.sessions,

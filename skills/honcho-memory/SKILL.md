@@ -6,7 +6,9 @@ license: MIT
 
 # Honcho memory
 
-You have a persistent memory of this user that survives across sessions, backed by Honcho. The codex-honcho hooks already inject relevant context at the start of each turn, and they record the conversation automatically. This skill is for the times you should reach for memory *actively*.
+Honcho stores memory across sessions. The codex-honcho hooks provide a short
+profile at session start and record the conversation by default. Prompt recall
+is optional. Use MCP to look up details when the supplied context is incomplete.
 
 ## When to pull memory
 
