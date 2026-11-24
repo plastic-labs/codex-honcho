@@ -69,6 +69,53 @@ test("drops Codex-injected system turns (environment_context, etc.)", () => {
   expect(turns[0].text).toBe("actual question from me");
 });
 
+for (const [heading, newline] of [
+  ["# AGENTS.md instructions", "\n"],
+  ["# AGENTS.md instructions for /repo/my-app", "\n"],
+  ["# AGENTS.md instructions for /", "\n"],
+  ["# AGENTS.md instructions for /", "\r\n"],
+]) {
+  test(`drops Codex-generated context preamble: ${heading} (${JSON.stringify(newline)})`, () => {
+    const path = writeRollout([
+      // Synthetic body; the native wrong-attribution evidence is replayed separately without copying it.
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: `${heading}${newline}${newline}<INSTRUCTIONS>${newline}Synthetic repository instructions.${newline}</INSTRUCTIONS>` }] } },
+      { type: "event_msg", payload: { type: "user_message", message: "actual question from me" } },
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "actual question from me" }] } },
+    ]);
+    expect(readRollout(path).map((t) => [t.role, t.text])).toEqual([["user", "actual question from me"]]);
+  });
+}
+
+test("preserves genuine user text mentioning AGENTS.md or using a non-envelope heading", () => {
+  const messages = [
+    "Please explain # AGENTS.md instructions and <INSTRUCTIONS> tags.",
+    "# AGENTS.md instructions\n\nPlease update this document.",
+    "# AGENTS.md instructions for /repo/my-app\n\nWhat should I put here?",
+    "# AGENTS.md instructions are confusing\n\n<INSTRUCTIONS> is a tag.",
+    "```\n# AGENTS.md instructions\n\n<INSTRUCTIONS>\nquoted example\n</INSTRUCTIONS>\n```",
+  ];
+  const path = writeRollout(messages.map((text) => ({ type: "response_item", payload: { type: "message", role: "user", content: text } })));
+  expect(readRollout(path).map((t) => t.text)).toEqual(messages);
+});
+
+test("skips assistant analysis channel but keeps final, commentary, and legacy turns", () => {
+  const path = writeRollout([
+    { type: "response_item", payload: { type: "message", role: "assistant", channel: "analysis", content: [{ type: "output_text", text: "synthetic internal reasoning" }] } },
+    { type: "response_item", payload: { type: "message", role: "user", channel: "analysis", content: "actual user text" } },
+    { type: "response_item", payload: { type: "message", role: "assistant", channel: "commentary", content: [{ type: "output_text", text: "Checking the file." }] } },
+    { type: "response_item", payload: { type: "message", role: "assistant", channel: "final", content: "Done." } },
+    { type: "response_item", payload: { type: "message", role: "assistant", content: "Legacy response." } },
+    { type: "response_item", payload: { type: "message", role: "assistant", channel: "final", content: "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nAssistant explanation.\n</INSTRUCTIONS>" } },
+  ]);
+  expect(readRollout(path).map((t) => [t.role, t.text])).toEqual([
+    ["user", "actual user text"],
+    ["assistant", "Checking the file."],
+    ["assistant", "Done."],
+    ["assistant", "Legacy response."],
+    ["assistant", "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nAssistant explanation.\n</INSTRUCTIONS>"],
+  ]);
+});
+
 test("skips malformed lines without throwing", () => {
   const path = writeRollout([
     { type: "session_meta", payload: { cwd: "/tmp/x" } },

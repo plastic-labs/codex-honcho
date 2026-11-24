@@ -82,12 +82,26 @@ test("explicit session override wins", () => {
   expect(sessionName(cfg, "/repo/x")).toBe("pinned-session");
 });
 
-test("chat-instance strategy appends a short Codex session id", () => {
-  writeConfig({ apiKey: "k", peerName: "testuser", hosts: { codex: { sessionStrategy: "chat-instance" } } });
+test("chat-instance strategy appends the full native Codex session UUID", () => {
+  writeConfig({ apiKey: "key", peerName: "testuser", hosts: { codex: { sessionStrategy: "chat-instance" } } });
   const cfg = loadConfig()!;
-  expect(sessionName(cfg, "/repo/my-app", "019ea7df-805e-76d1-af52")).toBe("my-app-019ea7df");
+  const id = "019ea7df-805e-76d1-af52-112233445566";
+  expect(sessionName(cfg, "/repo/my-app", id)).toBe(`my-app-${id}`);
   // No session id → falls back to the directory.
   expect(sessionName(cfg, "/repo/my-app")).toBe("my-app");
+});
+
+test("chat-instance sessions with the same UUID prefix do not collide in one cwd", () => {
+  writeConfig({ apiKey: "key", peerName: "testuser", sessionStrategy: "chat-instance" });
+  const cfg = loadConfig()!;
+  const first = "019ea7df-805e-76d1-af52-112233445566";
+  const second = "019ea7df-90ab-7abc-8123-665544332211";
+  expect(sessionName(cfg, "/repo/my-app", first)).not.toBe(sessionName(cfg, "/repo/my-app", second));
+});
+
+test("chat-instance strategy still respects an explicit session override", () => {
+  writeConfig({ apiKey: "key", peerName: "testuser", sessionStrategy: "chat-instance", sessions: { "/repo/x": "pinned-session" } });
+  expect(sessionName(loadConfig()!, "/repo/x", "019ea7df-805e-76d1-af52-112233445566")).toBe("pinned-session");
 });
 
 test("git-branch strategy appends the current branch", () => {
