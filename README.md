@@ -129,7 +129,7 @@ Controls how Codex conversations map to Honcho sessions:
 | --- | --- | --- |
 | `per-directory` (default) | `my-app` | Most users — each project accumulates its own memory |
 | `git-branch` | `my-app-main` | Feature-branch workflows where context per branch matters |
-| `chat-instance` | `my-app-019ea7df` | Ephemeral usage — a clean slate per conversation |
+| `chat-instance` | `my-app-019ea7df-805e-76d1-af52-112233445566` | Ephemeral usage — a clean slate per conversation |
 
 An explicit `sessions[cwd]` mapping overrides all strategies. Environment overrides: `HONCHO_API_KEY`, `HONCHO_PEER_NAME`, `HONCHO_CONFIG_DIR`.
 

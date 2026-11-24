@@ -25,6 +25,7 @@ interface RolloutEvent {
   payload?: {
     type?: string;
     role?: string;
+    channel?: string;
     content?: string | ContentBlock[];
     cwd?: string;
     id?: string;
@@ -48,6 +49,8 @@ const CODEX_SYSTEM_TAGS = [
 
 function isInjectedSystemTurn(text: string): boolean {
   const t = text.trimStart();
+  // Match the generated heading + instruction envelope, not ordinary AGENTS.md mentions.
+  if (/^# AGENTS\.md instructions(?: for \/[^\r\n]*)?\r?\n\s*<INSTRUCTIONS>/.test(t)) return true;
   return CODEX_SYSTEM_TAGS.some((tag) => t.startsWith(`<${tag}>`) || t.startsWith(`<${tag} `));
 }
 
@@ -87,6 +90,7 @@ export function readRollout(path: string): Turn[] {
     const payload = event.payload;
     if (!payload || payload.type !== "message") continue;
     if (payload.role !== "user" && payload.role !== "assistant") continue;
+    if (payload.role === "assistant" && payload.channel === "analysis") continue;
 
     const text = collectText(payload.content);
     if (!text) continue;
